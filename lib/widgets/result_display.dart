@@ -3,33 +3,41 @@ import 'package:flutter/material.dart';
 import '../models/compound_miter.dart';
 import '../util/formatting.dart';
 
-/// Shows the calculated saw settings. Bevel and miter are always shown; the
-/// dihedral and miter complement appear only when [showAdvanced] is true.
+/// Shows the calculated saw settings for the current [mode].
+///
+/// Box modes show bevel and miter, with the dihedral and miter complement
+/// behind [showAdvanced]. Picture Frame mode is flat, so the bevel, lean
+/// banner, and dihedral are omitted.
 class ResultDisplay extends StatelessWidget {
   const ResultDisplay({
     super.key,
     required this.result,
+    required this.mode,
     required this.exact,
     required this.showAdvanced,
   });
 
   final MiterResult result;
+  final JointMode mode;
   final bool exact;
   final bool showAdvanced;
 
   @override
   Widget build(BuildContext context) {
+    final bool frame = mode == JointMode.pictureFrame;
     return Column(
       children: <Widget>[
         Row(
           children: <Widget>[
-            Expanded(
-              child: _PrimaryResult(
-                label: 'Bevel (blade tilt)',
-                value: formatAngle(result.bladeTilt, exact: exact),
+            if (!frame) ...<Widget>[
+              Expanded(
+                child: _PrimaryResult(
+                  label: 'Bevel (blade tilt)',
+                  value: formatAngle(result.bladeTilt, exact: exact),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
+              const SizedBox(width: 12),
+            ],
             Expanded(
               child: _PrimaryResult(
                 label: 'Miter (from fence)',
@@ -38,19 +46,23 @@ class ResultDisplay extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
-        _LeanBanner(lean: result.lean),
+        if (!frame) ...<Widget>[
+          const SizedBox(height: 12),
+          _LeanBanner(lean: result.lean),
+        ],
         if (showAdvanced) ...<Widget>[
           const SizedBox(height: 12),
           Row(
             children: <Widget>[
-              Expanded(
-                child: _SecondaryResult(
-                  label: 'Dihedral (D)',
-                  value: formatAngle(result.dihedral, exact: exact),
+              if (!frame) ...<Widget>[
+                Expanded(
+                  child: _SecondaryResult(
+                    label: 'Dihedral (D)',
+                    value: formatAngle(result.dihedral, exact: exact),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
+              ],
               Expanded(
                 child: _SecondaryResult(
                   label: "Miter complement (M')",
@@ -140,15 +152,4 @@ class _LeanBanner extends StatelessWidget {
     final (IconData icon, String text) = switch (lean) {
       LeanDirection.outward => (Icons.unfold_more, 'Splays outward (top wider)'),
       LeanDirection.inward => (Icons.unfold_less, 'Slopes inward (top narrower)'),
-      LeanDirection.vertical => (Icons.vertical_align_center, 'Upright (vertical sides)'),
-    };
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        Icon(icon, size: 18, color: Theme.of(context).colorScheme.secondary),
-        const SizedBox(width: 6),
-        Text(text, style: Theme.of(context).textTheme.bodyMedium),
-      ],
-    );
-  }
-}
+    

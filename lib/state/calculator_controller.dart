@@ -21,6 +21,7 @@ class CalculatorController extends ChangeNotifier {
   // Defaults per DECISIONS.md: square box, S = 10°.
   int _n = 4;
   double _sideAngle = 10.0;
+  JointMode _mode = JointMode.miteredBox;
 
   bool _exactPrecision = false; // false = round to 0.5°
   bool _showAdvanced = false; // hide dihedral D and complement M' by default
@@ -36,13 +37,21 @@ class CalculatorController extends ChangeNotifier {
 
   int get n => _n;
   double get sideAngle => _sideAngle;
+  JointMode get mode => _mode;
   bool get exactPrecision => _exactPrecision;
   bool get showAdvanced => _showAdvanced;
   ThemeMode get themeMode => _themeMode;
   List<SavedProject> get saved => List<SavedProject>.unmodifiable(_saved);
 
   /// The current calculation.
-  MiterResult get result => computeCompoundMiter(_n, _sideAngle);
+  MiterResult get result => computeForMode(_mode, _n, _sideAngle);
+
+  void setMode(JointMode value) {
+    if (value != _mode) {
+      _mode = value;
+      notifyListeners();
+    }
+  }
 
   void setN(int value) {
     final int clamped = value < minSides ? minSides : value;
@@ -102,11 +111,27 @@ class CalculatorController extends ChangeNotifier {
   }
 
   void saveProject(String name) {
-    _saved.add(SavedProject(name: name, n: _n, sideAngle: _sideAngle));
+    _saved.add(
+        SavedProject(name: name, n: _n, sideAngle: _sideAngle, mode: _mode));
     notifyListeners();
     _persist();
   }
 
   void loadProject(SavedProject project) {
     // Route through the setters so stored values are clamped to legal ranges.
-    setN
+    setMode(project.mode);
+    setN(project.n);
+    setSideAngle(project.sideAngle);
+  }
+
+  void deleteProject(SavedProject project) {
+    _saved.remove(project);
+    notifyListeners();
+    _persist();
+  }
+
+  void _persist() {
+    // Fire-and-forget; the in-memory list is the source of truth for the UI.
+    _store.save(List<SavedProject>.unmodifiable(_saved));
+  }
+}

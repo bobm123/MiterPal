@@ -49,4 +49,83 @@ void main() {
       expect(() => computeCompoundMiter(2, 0), throwsArgumentError);
     });
   });
+
+  group('computePictureFrame', () {
+    test('rectangular frame is the classic 45', () {
+      final MiterResult r = computePictureFrame(4);
+      expect(r.miter, closeTo(45.0, 1e-9));
+      expect(r.miterComplement, closeTo(45.0, 1e-9));
+      expect(r.bladeTilt, closeTo(0.0, 1e-9));
+      expect(r.dihedral, closeTo(180.0, 1e-9));
+    });
+
+    test('hexagonal frame: 30 degree miter', () {
+      final MiterResult r = computePictureFrame(6);
+      expect(r.miter, closeTo(30.0, 1e-9));
+      expect(r.miterComplement, closeTo(60.0, 1e-9));
+    });
+
+    test('throws for N < 3', () {
+      expect(() => computePictureFrame(2), throwsArgumentError);
+    });
+  });
+
+  group('computeButtJoint', () {
+    test('upright square box is a plain square crosscut', () {
+      final MiterResult r = computeButtJoint(4, 0);
+      expect(r.bladeTilt, closeTo(0.0, 1e-6));
+      expect(r.miter, closeTo(0.0, 1e-6));
+      expect(r.dihedral, closeTo(90.0, 1e-6));
+    });
+
+    test('upright hexagon: 30 degree bevel, no miter', () {
+      final MiterResult r = computeButtJoint(6, 0);
+      expect(r.bladeTilt, closeTo(30.0, 1e-6));
+      expect(r.miter, closeTo(0.0, 1e-6));
+    });
+
+    test('upright octagon: the classic 45 degree bevel', () {
+      final MiterResult r = computeButtJoint(8, 0);
+      expect(r.bladeTilt, closeTo(45.0, 1e-6));
+    });
+
+    test('upright triangle tilts the other way (negative bevel)', () {
+      final MiterResult r = computeButtJoint(3, 0);
+      expect(r.bladeTilt, closeTo(-30.0, 1e-6));
+    });
+
+    test('square box, S=10: worked values', () {
+      final MiterResult r = computeButtJoint(4, 10);
+      // c = cos^2(10)*cos(90) + sin^2(10) = sin^2(10) -> asin = 1.728 deg
+      expect(r.bladeTilt, closeTo(1.728, 0.001));
+      expect(r.miter, closeTo(9.851, 0.001));
+    });
+
+    test('pentagon, S=10: worked values', () {
+      final MiterResult r = computeButtJoint(5, 10);
+      expect(r.bladeTilt, closeTo(19.26, 0.01));
+    });
+
+    test('table miter and dihedral match the mitered box', () {
+      final MiterResult butt = computeButtJoint(5, 10);
+      final MiterResult mitered = computeCompoundMiter(5, 10);
+      expect(butt.miter, closeTo(mitered.miter, 1e-9));
+      expect(butt.dihedral, closeTo(mitered.dihedral, 1e-9));
+    });
+
+    test('throws for N < 3', () {
+      expect(() => computeButtJoint(2, 0), throwsArgumentError);
+    });
+  });
+
+  group('computeForMode', () {
+    test('dispatches to the right calculation', () {
+      expect(computeForMode(JointMode.pictureFrame, 4, 10).miter,
+          closeTo(45.0, 1e-9));
+      expect(computeForMode(JointMode.miteredBox, 4, 0).bladeTilt,
+          closeTo(45.0, 1e-6));
+      expect(computeForMode(JointMode.buttJointBox, 4, 0).bladeTilt,
+          closeTo(0.0, 1e-6));
+    });
+  });
 }

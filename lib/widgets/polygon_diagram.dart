@@ -9,10 +9,15 @@ class PolygonDiagram extends StatelessWidget {
     super.key,
     required this.n,
     required this.sideAngle,
+    this.showLean = true,
   });
 
   final int n;
   final double sideAngle;
+
+  /// Whether to draw the side-elevation lean panel. Off for flat modes
+  /// (picture frames), where lean has no meaning.
+  final bool showLean;
 
   @override
   Widget build(BuildContext context) {
@@ -40,25 +45,26 @@ class PolygonDiagram extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: Column(
-              children: <Widget>[
-                Expanded(
-                  child: CustomPaint(
-                    size: Size.infinite,
-                    painter: _LeanPainter(
-                      sideAngle: sideAngle,
-                      wall: scheme.primary,
-                      reference: scheme.outlineVariant,
-                      ground: scheme.outline,
+          if (showLean)
+            Expanded(
+              child: Column(
+                children: <Widget>[
+                  Expanded(
+                    child: CustomPaint(
+                      size: Size.infinite,
+                      painter: _LeanPainter(
+                        sideAngle: sideAngle,
+                        wall: scheme.primary,
+                        reference: scheme.outlineVariant,
+                        ground: scheme.outline,
+                      ),
                     ),
                   ),
-                ),
-                Text('Side lean (${sideAngle.toStringAsFixed(1)}°)',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ],
+                  Text('Side lean (${sideAngle.toStringAsFixed(1)}°)',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -166,15 +172,4 @@ class _LeanPainter extends CustomPainter {
     );
     canvas.drawLine(
       foot,
-      wallTop,
-      Paint()
-        ..color = wall
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_LeanPainter old) =>
-      old.sideAngle != sideAngle || old.wall != wall;
-}
+    

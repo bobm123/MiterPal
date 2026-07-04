@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:miterpal/models/compound_miter.dart';
 import 'package:miterpal/models/saved_project.dart';
 import 'package:miterpal/services/project_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -44,5 +45,30 @@ void main() {
     final List<SavedProject> loaded = await store.load();
     expect(loaded.length, 1);
     expect(loaded.single.name, 'Second');
+  });
+
+  test('joint mode survives a save/load round trip', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final ProjectStore store = ProjectStore();
+
+    await store.save(const <SavedProject>[
+      SavedProject(name: 'Frame', n: 4, sideAngle: 0,
+          mode: JointMode.pictureFrame),
+      SavedProject(name: 'Hopper', n: 6, sideAngle: -12,
+          mode: JointMode.buttJointBox),
+    ]);
+
+    final List<SavedProject> loaded = await store.load();
+    expect(loaded[0].mode, JointMode.pictureFrame);
+    expect(loaded[1].mode, JointMode.buttJointBox);
+  });
+
+  test('legacy JSON without a mode defaults to mitered box', () {
+    final SavedProject p = SavedProject.fromJson(<String, dynamic>{
+      'name': 'Old project',
+      'n': 5,
+      'sideAngle': 12.5,
+    });
+    expect(p.mode, JointMode.miteredBox);
   });
 }
