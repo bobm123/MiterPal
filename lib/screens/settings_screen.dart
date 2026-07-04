@@ -38,36 +38,22 @@ class SettingsScreen extends StatelessWidget {
               ),
               const Divider(),
               const _SectionHeader('Appearance'),
-              SwitchListTile(
-                secondary: const Icon(Icons.dark_mode_outlined),
-                title: const Text('Dark mode'),
-                value: Theme.of(context).brightness == Brightness.dark,
-                onChanged: (bool on) => controller
-                    .setThemeMode(on ? ThemeMode.dark : ThemeMode.light),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Text(
-        label,
-        style: theme.textTheme.labelLarge
-            ?.copyWith(color: theme.colorScheme.primary),
-      ),
-    );
-  }
-}
+              ListTile(
+                leading: const Icon(Icons.dark_mode_outlined),
+                title: const Text('Theme'),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SegmentedButton<ThemeMode>(
+                    segments: const <ButtonSegment<ThemeMode>>[
+                      ButtonSegment<ThemeMode>(
+                        value: ThemeMode.system,
+                        label: Text('System'),
+                        icon: Icon(Icons.brightness_auto_outlined),
+                      ),
+                      ButtonSegment<ThemeMode>(
+                        value: ThemeMode.light,
+                        label: Text('Light'),
+                        icon: Icon(Icons.light_mode_outlined),
+                      ),
+                      ButtonSegment<ThemeMode>(
+ 
