@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="380" viewBox="0 0 440 380" font-family="sans-serif">
+  <rect width="440" height="380" fill="#ffffff"/>
+  <text x="220" y="30" font-size="16" font-weight="bold" text-anchor="middle">Assembled 4-sided box (outward splay)</text>
+
+  <!--
+    Viewpoint: above and slightly left of the box, looking down into the
+    opening — matches the planter photo. Visible faces: top rim (opening),
+    front face, right face. The left and back faces are hidden.
+
+    Bottom rim is a 0.55x scaled copy of the top rim around a shared
+    centroid, so every bottom edge stays parallel to its top counterpart.
+
+    Top rim:    TFL ( 95,200)  TFR (340,210)  TBR (370,105)  TBL (135, 95)
+    Bottom rim: BFL (158,306)  BFR (293,312)  BBR (309,254)  BBL (180,248)
+  -->
+
+  <!-- inside back wall (visible through the opening) -->
+  <polygon points="135,95 370,105 309,254 180,248" fill="#efd9b0" stroke="#8a5a2b" stroke-width="1.5"/>
+
+  <!-- bottom (interior, visible through opening) -->
+  <polygon points="158,306 293,312 309,254 180,248" fill="#e2c48a" stroke="#8a5a2b" stroke-width="1.2" opacity="0.6"/>
+
+  <!-- front visible face -->
+  <polygon points="95,200 340,210 293,312 158,306" fill="#e7cfa6" stroke="#8a5a2b" stroke-width="2"/>
+  <text x="215" y="265" font-size="12" fill="#5a3a18" text-anchor="middle">side</text>
+
+  <!-- right visible face -->
+  <polygon points="340,210 370,105 309,254 293,312" fill="#cdaa77" stroke="#8a5a2b" stroke-width="2"/>
+  <text x="328" y="215" font-size="12" fill="#5a3a18">side</text>
+
+  <!-- top rim outline (opening) drawn last so its edges sit on top -->
+  <polygon points="95,200 340,210 370,105 135,95" fill="none" stroke="#8a5a2b" stroke-width="2"/>
+
+  <!-- highlighted compound-miter corner edge (front-right vertical) -->
+  <line x1="340" y1="210" x2="293" y2="312" stroke="#c0392b" stroke-width="3"/>
+  <text x="355" y="285" font-size="12" fill="#c0392b">corner (compound miter)</text>
+  <line x1="350" y1="273" x2="320" y2="262" stroke="#c0392b" stroke-width="1"/>
+
+  <text x="220" y="350" font-size="11" fill="#777" text-anchor="middle">top wider than bottom — each side tilts outward by S</text>
+</svg>

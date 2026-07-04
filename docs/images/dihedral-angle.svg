@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="340" viewBox="0 0 480 340" font-family="sans-serif">
+  <rect width="480" height="340" fill="#ffffff"/>
+  <text x="240" y="30" font-size="16" font-weight="bold" text-anchor="middle">Dihedral angle D — between two adjacent sides</text>
+
+  <!-- shared corner edge running down the middle -->
+  <line x1="240" y1="70" x2="240" y2="290" stroke="#333" stroke-width="3"/>
+  <text x="250" y="300" font-size="12" fill="#333">corner edge</text>
+
+  <!-- left side panel (parallelogram) -->
+  <polygon points="240,90 240,270 90,230 90,130" fill="#d8b98a" stroke="#8a5a2b" stroke-width="2"/>
+  <text x="150" y="185" font-size="13" fill="#5a3a18">side A</text>
+
+  <!-- right side panel -->
+  <polygon points="240,90 240,270 390,230 390,130" fill="#e7cfa6" stroke="#8a5a2b" stroke-width="2"/>
+  <text x="300" y="185" font-size="13" fill="#5a3a18">side B</text>
+
+  <!-- dihedral arc, drawn in cross-section near top -->
+  <path d="M 150 124 A 95 95 0 0 0 330 124" fill="none" stroke="#c0392b" stroke-width="2.5"/>
+  <text x="240" y="118" font-size="16" fill="#c0392b" font-weight="bold" text-anchor="middle">D</text>
+
+  <text x="240" y="328" font-size="11" fill="#777" text-anchor="middle">The miter blade tilt is B = 90° − D/2 (the miter splits D evenly).</text>
+</svg>
