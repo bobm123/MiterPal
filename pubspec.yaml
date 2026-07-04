@@ -10,6 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   shared_preferences: ^2.2.0
+  # Debug-only device frame simulator (iPhone/Pixel sizes, safe areas,
+  # orientation, dark mode) for previewing mobile layouts on desktop.
+  device_preview: ^1.1.0
 
 dev_dependencies:
   flutter_test:

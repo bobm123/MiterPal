@@ -1,3 +1,5 @@
+import 'package:device_preview/device_preview.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'screens/calculator_screen.dart';
@@ -5,7 +7,15 @@ import 'state/calculator_controller.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MiterPalApp());
+  runApp(
+    DevicePreview(
+      // Debug builds get the device-frame preview panel (pick an iPhone or
+      // Pixel, rotate, toggle its frame). Release builds run the app
+      // directly; DevicePreview compiles to a no-op passthrough there.
+      enabled: !kReleaseMode,
+      builder: (BuildContext context) => const MiterPalApp(),
+    ),
+  );
 }
 
 class MiterPalApp extends StatefulWidget {
@@ -32,6 +42,9 @@ class _MiterPalAppState extends State<MiterPalApp> {
         return MaterialApp(
           title: 'MiterPal',
           debugShowCheckedModeBanner: false,
+          // Let DevicePreview drive the simulated device's MediaQuery/locale.
+          locale: DevicePreview.locale(context),
+          builder: DevicePreview.appBuilder,
           themeMode: _controller.themeMode,
           theme: ThemeData(
             colorSchemeSeed: const Color(0xFF6750A4),
