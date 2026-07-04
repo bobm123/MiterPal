@@ -176,18 +176,12 @@ class _ModeSelector extends StatelessWidget {
                 for (final JointMode mode in JointMode.values)
                   DropdownMenuItem<JointMode>(
                     value: mode,
-                    child: Text(mode.label),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(mode.label),
+                    ),
                   ),
               ],
               onChanged: (JointMode? mode) {
                 if (mode != null) {
-                  onChanged(mode);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+       
