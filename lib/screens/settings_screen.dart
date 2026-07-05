@@ -56,4 +56,40 @@ class SettingsScreen extends StatelessWidget {
                         icon: Icon(Icons.light_mode_outlined),
                       ),
                       ButtonSegment<ThemeMode>(
- 
+                        value: ThemeMode.dark,
+                        label: Text('Dark'),
+                        icon: Icon(Icons.dark_mode_outlined),
+                      ),
+                    ],
+                    selected: <ThemeMode>{controller.themeMode},
+                    onSelectionChanged: (Set<ThemeMode> selection) =>
+                        controller.setThemeMode(selection.first),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      child: Text(
+        label,
+        style: theme.textTheme.labelLarge
+            ?.copyWith(color: theme.colorScheme.primary),
+      ),
+    );
+  }
+}

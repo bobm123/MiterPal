@@ -152,4 +152,15 @@ class _LeanBanner extends StatelessWidget {
     final (IconData icon, String text) = switch (lean) {
       LeanDirection.outward => (Icons.unfold_more, 'Splays outward (top wider)'),
       LeanDirection.inward => (Icons.unfold_less, 'Slopes inward (top narrower)'),
-    
+      LeanDirection.vertical => (Icons.vertical_align_center, 'Upright (vertical sides)'),
+    };
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.secondary),
+        const SizedBox(width: 6),
+        Text(text, style: Theme.of(context).textTheme.bodyMedium),
+      ],
+    );
+  }
+}

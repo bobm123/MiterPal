@@ -172,4 +172,15 @@ class _LeanPainter extends CustomPainter {
     );
     canvas.drawLine(
       foot,
-    
+      wallTop,
+      Paint()
+        ..color = wall
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LeanPainter old) =>
+      old.sideAngle != sideAngle || old.wall != wall;
+}

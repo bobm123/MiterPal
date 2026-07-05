@@ -184,4 +184,13 @@ class _ModeSelector extends StatelessWidget {
               ],
               onChanged: (JointMode? mode) {
                 if (mode != null) {
-       
+                  onChanged(mode);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
