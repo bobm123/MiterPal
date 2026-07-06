@@ -2,10 +2,20 @@
 
 A smartphone app for calculating miter saw settings for compound-miter / N-sided box (stave) construction.
 
-**Status:** MVP (v0.1.0). Calculation core ported and tested; calculator UI
-with three joint modes (Picture Frame, Mitered Box, Butt Joint Box),
-save/recall, live diagram, settings menu, and dark mode implemented and running
-on Windows desktop. iOS first for release, Android later.
+**Status:** MVP (v0.1.0), not yet in the app stores. Calculation core ported
+and tested; calculator UI with three joint modes (Picture Frame, Mitered Box,
+Butt Joint Box), save/recall, live diagram, settings menu, and dark mode. The
+full app currently runs as a **Windows desktop simulation**: debug builds wrap
+the app in a phone-frame preview, so you can try the complete phone experience
+on a PC without installing anything from the Apple App Store — see
+[Try it on Windows](#try-it-on-windows-no-app-store-needed) below. iOS first
+for release, Android later.
+
+<img src="Clipboard01.png" width="320" alt="MiterPal running in the Windows phone-frame simulator: a 5-sided mitered box with sides leaning 11 degrees gives a 35 degree bevel and 8 degree miter">
+
+*A typical calculation, running in the phone-frame simulator on Windows: a
+5-sided mitered box with sides leaning 11° — set the saw to a 35° bevel and
+an 8° miter.*
 
 ## What it does
 
@@ -28,15 +38,34 @@ The math, derivation, sanity checks, and worked examples live in [`docs/compound
 - iOS first.
 - Android support planned later.
 
-## Building & running
+## Try it on Windows (no App Store needed)
 
-This repo includes the Dart source and the generated `windows/` runner. From the
-repo root:
+The app isn't in the app stores yet, but the complete experience runs on any
+Windows PC. One-time tool setup:
+
+1. Install the [Flutter SDK](https://docs.flutter.dev/get-started/install/windows)
+   (stable channel) and make sure `flutter` is on your PATH.
+2. Install [Visual Studio 2022 Community](https://visualstudio.microsoft.com/)
+   with the **Desktop development with C++** workload — Flutter needs it for
+   Windows desktop builds. (Stay on VS **2022**; VS 2026 currently breaks
+   Flutter's Windows build.)
+3. Check the setup with `flutter doctor` — Flutter and Visual Studio should
+   both show a check mark.
+
+Then clone and run (this repo includes the Dart source and the generated
+`windows/` runner):
 
 ```
-flutter pub get        # fetch dependencies (incl. shared_preferences)
-flutter run -d windows # build + launch the desktop window
+git clone https://github.com/bobm123/MiterPal.git
+cd MiterPal
+flutter pub get        # fetch dependencies
+flutter run -d windows # build + launch
 ```
+
+Debug builds open inside a phone-frame simulator
+([`device_preview`](https://pub.dev/packages/device_preview)): pick an iPhone
+or Pixel in the side panel, rotate it, toggle dark mode, or switch the preview
+off for a plain desktop window. Release builds run the app directly.
 
 Add other platform targets later with e.g. `flutter create --platforms=android,ios .`
 
