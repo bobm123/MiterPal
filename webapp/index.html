@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>MiterPal</title>
+<style>
+  /* ---- Theme ---------------------------------------------------------- */
+  :root {
+    --bg: #fdf7ff;
+    --surface: #f6edf7;
+    --surface2: #ece0ee;
+    --text: #1d1a20;
+    --text-dim: #4a4458;
+    --primary: #6750a4;
+    --on-primary: #ffffff;
+    --primary-container: #e9ddff;
+    --on-primary-container: #22005d;
+    --outline: #cac4cf;
+    --shadow: rgba(0,0,0,.08);
+  }
+  [data-theme="dark"] {
+    --bg: #141218;
+    --surface: #211f26;
+    --surface2: #2b2930;
+    --text: #e6e0e9;
+    --text-dim: #cac4cf;
+    --primary: #cfbcff;
+    --on-primary: #381e72;
+    --primary-container: #4f378a;
+    --on-primary-container: #e9ddff;
+    --outline: #49454e;
+    --shadow: rgba(0,0,0,.4);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: 40px;
+  }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 14px 16px 10px;
+    max-width: 560px; margin: 0 auto;
+  }
+  header h1 { font-size: 22px; font-weight: 600; margin: 0; flex: 1; }
+  header button {
+    background: none; border: none; font-size: 20px; cursor: pointer;
+    color: var(--text); padding: 6px 8px; border-radius: 8px;
+  }
+  header button:hover { background: var(--surface2); }
+  main { max-width: 560px; margin: 0 auto; padding: 0 12px; }
+
+  .card {
+    background: var(--surface);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px var(--shadow);
+    padding: 12px 16px;
+    margin-bottom: 8px;
+  }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row .label { flex: 1; font-weight: 500; font-size: 15px; }
+  .hint { font-size: 12.5px; color: var(--text-dim); margin-top: 4px; }
+
+  select, input[type="text"] {
+    background: var(--surface2); color: var(--text);
+    border: 1px solid var(--outline); border-radius: 8px;
+    font-size: 16px; padding: 8px 10px;
+  }
+  .value { font-size: 24px; min-width: 72px; text-align: right; }
+  input.value {
+    width: 96px; text-align: right; font-size: 22px; padding: 4px 8px;
+  }
+  .unit { font-size: 22px; width: 18px; }
+
+  button.step {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: none; background: var(--primary-container);
+    color: var(--on-primary-container);
+    font-size: 22px; line-height: 1; cursor: pointer;
+  }
+  button.step:disabled { opacity: .38; cursor: default; }
+  button.step:not(:disabled):active { filter: brightness(1.1); }
+
+  /* Results */
+  .results { display: flex; gap: 12px; margin: 16px 0 12px; }
+  .result {
+    flex: 1; background: var(--primary-container);
+    color: var(--on-primary-container);
+    border-radius: 12px; padding: 18px 12px; text-align: center;
+    box-shadow: 0 1px 3px var(--shadow);
+  }
+  .result .num { font-size: 34px; font-weight: 700; }
+  .result .cap { font-size: 14px; margin-top: 4px; }
+  .secondary-results { display: flex; gap: 12px; margin-bottom: 12px; }
+  .secondary {
+    flex: 1; background: var(--surface); border-radius: 12px;
+    padding: 12px; text-align: center; box-shadow: 0 1px 3px var(--shadow);
+  }
+  .secondary .num { font-size: 20px; font-weight: 600; }
+  .secondary .cap { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+  #leanBanner {
+    text-align: center; font-size: 14.5px; color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+
+  /* Diagram */
+  .diagram { display: flex; gap: 8px; }
+  .diagram figure { flex: 1; margin: 0; text-align: center; }
+  .diagram canvas { width: 100%; height: 130px; }
+  .diagram figcaption { font-size: 12.5px; color: var(--text-dim); }
+
+  /* Checklist */
+  details summary {
+    cursor: pointer; font-weight: 500; padding: 4px 0;
+  }
+  details summary small { display: block; font-weight: 400; color: var(--text-dim); }
+  .check { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; font-size: 14.5px; }
+  .check input { transform: translateY(2px); }
+
+  /* Dialogs */
+  dialog {
+    background: var(--surface); color: var(--text);
+    border: none; border-radius: 16px; padding: 20px;
+    max-width: 420px; width: calc(100vw - 48px);
+    box-shadow: 0 8px 30px var(--shadow);
+  }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog h2 { margin: 0 0 12px; font-size: 19px; }
+  dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  dialog button {
+    border: none; border-radius: 20px; padding: 9px 18px; font-size: 15px;
+    cursor: pointer; background: none; color: var(--primary); font-weight: 500;
+  }
+  dialog button.filled { background: var(--primary); color: var(--on-primary); }
+  dialog input[type="text"] { width: 100%; }
+  .proj {
+    display: flex; align-items: center; gap: 8px; padding: 8px 0;
+    border-bottom: 1px solid var(--outline);
+  }
+  .proj:last-child { border-bottom: none; }
+  .proj .pname { flex: 1; }
+  .proj .pname small { display: block; color: var(--text-dim); }
+  .proj button { padding: 6px 10px; }
+  .setting { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
+  .setting .label { flex: 1; }
+  .setting .label small { display: block; color: var(--text-dim); font-size: 12.5px; }
+  .seg { display: flex; border: 1px solid var(--outline); border-radius: 20px; overflow: hidden; }
+  .seg button { border-radius: 0; padding: 7px 14px; font-size: 14px; }
+  .seg button.on { background: var(--primary-container); color: var(--on-primary-container); }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: 10px 18px;
+    border-radius: 8px; font-size: 14.5px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MiterPal</h1>
+  <button id="btnSave" title="Save project">&#128278;</button>
+  <button id="btnProjects" title="Saved projects">&#128193;</button>
+  <button id="btnSettings" title="Settings">&#9881;&#65039;</button>
+</header>
+
+<main>
+  <div class="card">
+    <div class="row">
+      <span class="label">Joint type</span>
+      <select id="mode">
+        <option value="pictureFrame">Picture Frame</option>
+        <option value="miteredBox" selected>Mitered Box</option>
+        <option value="buttJointBox">Butt Joint Box</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <span class="label">Sides (N)</span>
+      <span class="value" id="nValue">4</span>
+      <span class="unit"></span>
+      <button class="step" id="nMinus">&minus;</button>
+      <button class="step" id="nPlus">+</button>
+    </div>
+  </div>
+
+  <div class="card" id="angleCard">
+    <div class="row">
+      <span class="label">Side angle (S)</span>
+      <input class="value" id="sValue" inputmode="decimal" autocomplete="off">
+      <span class="unit">&deg;</span>
+      <button class="step" id="sMinus">&minus;</button>
+      <button class="step" id="sPlus">+</button>
+    </div>
+    <div class="hint">0 = upright &middot; + splays out &middot; &minus; slopes in</div>
+  </div>
+
+  <div class="results" id="results"></div>
+  <div id="leanBanner"></div>
+  <div class="secondary-results" id="advanced" hidden></div>
+
+  <div class="card">
+    <div class="diagram">
+      <figure>
+        <canvas id="topView"></canvas>
+        <figcaption id="topCaption"></figcaption>
+      </figure>
+      <figure id="leanFigure">
+        <canvas id="leanView"></canvas>
+        <figcaption id="leanCaption"></figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>At the saw <small>Pre-cut checklist</small></summary>
+      <div class="check"><input type="checkbox"><span>Mark the "outside face" on every blank before cutting.</span></div>
+      <div class="check"><input type="checkbox"><span>Cut a test piece on scrap first &mdash; catch sign / edge-up mistakes.</span></div>
+      <div class="check"><input type="checkbox"><span>Both edges get the same bevel and miter; flip the board end-for-end between cuts.</span></div>
+      <div class="check"><input type="checkbox"><span>If your saw measures miter from the blade, use the complement (M&prime;).</span></div>
+    </details>
+  </div>
+</main>
+
+<dialog id="dlgSave">
+  <h2>Save project</h2>
+  <input type="text" id="saveName" placeholder="Name">
+  <div class="actions">
+    <button id="saveCancel">Cancel</button>
+    <button class="filled" id="saveOk">Save</button>
+  </div>
+</dialog>
+
+<dialog id="dlgProjects">
+  <h2>Saved projects</h2>
+  <div id="projList"></div>
+  <div class="actions"><button id="projClose">Close</button></div>
+</dialog>
+
+<dialog id="dlgSettings">
+  <h2>Settings</h2>
+  <div class="setting">
+    <span class="label">Show advanced (D and M&prime;)
+      <small>Dihedral angle and miter complement</small></span>
+    <input type="checkbox" id="setAdvanced">
+  </div>
+  <div class="setting">
+    <span class="label">Exact precision
+      <small id="precisionHint">Rounded to nearest 0.5&deg;</small></span>
+    <input type="checkbox" id="setExact">
+  </div>
+  <div class="setting">
+    <span class="label">Theme</span>
+    <div class="seg" id="themeSeg">
+      <button data-v="system">System</button>
+      <button data-v="light">Light</button>
+      <button data-v="dark">Dark</button>
+    </div>
+  </div>
+  <div class="actions"><button id="setClose">Close</button></div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   MiterPal web — vanilla JS port of the Flutter app.
+   Math mirrors lib/models/compound_miter.dart (and scripts/compound_miter.py).
+   ========================================================================= */
+
+/* ---- Calculation core --------------------------------------------------- */
+const DEG = Math.PI / 180;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// Mitered box: symmetric miters bisect each corner.
+function computeCompoundMiter(n, sideAngleDeg) {
+  if (n < 3) throw new RangeError("n must be >= 3");
+  const s = sideAngleDeg * DEG;
+  const alpha = (180 / n) * DEG;
+  const cosS = Math.cos(s), sinA = Math.sin(alpha);
+  const cosD = clamp(2 * cosS * cosS * sinA * sinA - 1, -1, 1);
+  const d = Math.acos(cosD);
+  const b = Math.PI / 2 - d / 2;
+  const m = Math.atan(Math.sin(s) * Math.tan(alpha));
+  return result(n, sideAngleDeg, d / DEG, b / DEG, m / DEG);
+}
+
+// Butt joint box: each end cut flush against the neighbor's face.
+// Same table miter and dihedral as the mitered box; only the tilt differs:
+//   tilt = asin(cos^2(S)*cos(2*alpha) + sin^2(S))
+function computeButtJoint(n, sideAngleDeg) {
+  if (n < 3) throw new RangeError("n must be >= 3");
+  const s = sideAngleDeg * DEG;
+  const alpha = (180 / n) * DEG;
+  const cosS = Math.cos(s), sinS = Math.sin(s), sinA = Math.sin(alpha);
+  const cosD = clamp(2 * cosS * cosS * sinA * sinA - 1, -1, 1);
+  const d = Math.acos(cosD);
+  const c = clamp(cosS * cosS * Math.cos(2 * alpha) + sinS * sinS, -1, 1);
+  const b = Math.asin(c);
+  const m = Math.atan(sinS * Math.tan(alpha));
+  return result(n, sideAngleDeg, d / DEG, b / DEG, m / DEG);
+}
+
+// Picture frame: flat, so no tilt; miter is half the corner angle.
+function computePictureFrame(n) {
+  if (n < 3) throw new RangeError("n must be >= 3");
+  return result(n, 0, 180, 0, 180 / n);
+}
+
+function result(n, sideAngle, dihedral, bladeTilt, miter) {
+  return {
+    n, sideAngle, dihedral, bladeTilt, miter,
+    miterComplement: 90 - miter,
+    lean: sideAngle > 0 ? "outward" : sideAngle < 0 ? "inward" : "vertical",
+  };
+}
+
+function computeForMode(mode, n, s) {
+  if (mode === "pictureFrame") return computePictureFrame(n);
+  if (mode === "buttJointBox") return computeButtJoint(n, s);
+  return computeCompoundMiter(n, s);
+}
+
+/* ---- Formatting (mirrors lib/util/formatting.dart) ---------------------- */
+function formatAngle(deg, exact) {
+  if (exact) return deg.toFixed(4) + "°";
+  let r = Math.round(deg * 2) / 2;
+  if (r === 0) r = 0; // normalize -0
+  return (Number.isInteger(r) ? r.toFixed(0) : r.toFixed(1)) + "°";
+}
+
+/* ---- State -------------------------------------------------------------- */
+const MIN_SIDES = 3, MAX_SIDE_ANGLE = 89;
+const store = {
+  load(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+    catch { return fallback; }
+  },
+  save(key, value) { localStorage.setItem(key, JSON.stringify(value)); },
+};
+
+const state = {
+  n: 4,
+  sideAngle: 10,
+  mode: "miteredBox",
+  ...store.load("miterpal.settings", {}),   // advanced, exact, theme
+  advanced: store.load("miterpal.settings", {}).advanced ?? false,
+  exact: store.load("miterpal.settings", {}).exact ?? false,
+  theme: store.load("miterpal.settings", {}).theme ?? "system",
+  projects: store.load("miterpal.projects", []),
+};
+
+function persistSettings() {
+  store.save("miterpal.settings",
+    { advanced: state.advanced, exact: state.exact, theme: state.theme });
+}
+function persistProjects() { store.save("miterpal.projects", state.projects); }
+
+/* ---- Elements ------------------------------------------------------------ */
+const $ = (id) => document.getElementById(id);
+const els = {
+  mode: $("mode"), nValue: $("nValue"), nMinus: $("nMinus"), nPlus: $("nPlus"),
+  angleCard: $("angleCard"), sValue: $("sValue"), sMinus: $("sMinus"), sPlus: $("sPlus"),
+  results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
+  topView: $("topView"), leanView: $("leanView"),
+  topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
+  toast: $("toast"),
+};
+
+/* ---- Rendering ------------------------------------------------------------ */
+function render() {
+  applyTheme();
+  const frame = state.mode === "pictureFrame";
+  const r = computeForMode(state.mode, state.n, state.sideAngle);
+
+  els.mode.value = state.mode;
+  els.nValue.textContent = state.n;
+  els.nMinus.disabled = state.n <= MIN_SIDES;
+  if (document.activeElement !== els.sValue) {
+    els.sValue.value = fmtInput(state.sideAngle);
+  }
+  els.angleCard.hidden = frame;
+
+  const card = (num, cap) =>
+    `<div class="result"><div class="num">${num}</div><div class="cap">${cap}</div></div>`;
+  els.results.innerHTML =
+    (frame ? "" : card(formatAngle(r.bladeTilt, state.exact), "Bevel (blade tilt)")) +
+    card(formatAngle(r.miter, state.exact), "Miter (from fence)");
+
+  els.leanBanner.hidden = frame;
+  els.leanBanner.textContent = {
+    outward: "↕ Splays outward (top wider)",
+    inward: "↕ Slopes inward (top narrower)",
+    vertical: "↕ Upright (vertical sides)",
+  }[r.lean];
+
+  els.advanced.hidden = !state.advanced;
+  const sec = (num, cap) =>
+    `<div class="secondary"><div class="num">${num}</div><div class="cap">${cap}</div></div>`;
+  els.advanced.innerHTML =
+    (frame ? "" : sec(formatAngle(r.dihedral, state.exact), "Dihedral (D)")) +
+    sec(formatAngle(r.miterComplement, state.exact), "Miter complement (M′)");
+
+  els.leanFigure.hidden = frame;
+  els.topCaption.textContent = `Top view (${state.n} sides)`;
+  els.leanCaption.textContent = `Side lean (${state.sideAngle.toFixed(1)}°)`;
+  drawTopView();
+  if (!frame) drawLeanView();
+}
+
+function fmtInput(v) { return Number.isInteger(v) ? v.toFixed(0) : String(v); }
+
+function cssVar(name) {
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return [ctx, w, h];
+}
+
+function drawTopView() {
+  const [ctx, w, h] = setupCanvas(els.topView);
+  const n = state.n;
+  const cx = w / 2, cy = h / 2, radius = Math.min(w, h) / 2 * 0.82;
+  // Even N rests on a flat edge (N=4 is a square, not a diamond).
+  const rot = n % 2 === 0 ? Math.PI / n : 0;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
+    pts.push([cx + radius * Math.cos(a), cy + radius * Math.sin(a)]);
+  }
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+  ctx.closePath();
+  ctx.fillStyle = cssVar("--primary") + "14"; // ~8% alpha
+  ctx.fill();
+  ctx.strokeStyle = cssVar("--outline");
+  ctx.lineWidth = 1;
+  pts.forEach(([x, y]) => {
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y); ctx.stroke();
+  });
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+  ctx.closePath();
+  ctx.strokeStyle = cssVar("--primary");
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+}
+
+function drawLeanView() {
+  const [ctx, w, h] = setupCanvas(els.leanView);
+  const baseY = h * 0.85, wallH = h * 0.7, footX = w / 2;
+  // Ground line.
+  ctx.strokeStyle = cssVar("--text-dim");
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(w * 0.15, baseY); ctx.lineTo(w * 0.85, baseY); ctx.stroke();
+  // Dashed vertical reference.
+  ctx.strokeStyle = cssVar("--outline");
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(footX, baseY); ctx.lineTo(footX, baseY - wallH); ctx.stroke();
+  ctx.setLineDash([]);
+  // The leaning wall; positive S tips the top outward (right).
+  const t = state.sideAngle * DEG;
+  ctx.strokeStyle = cssVar("--primary");
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(footX, baseY);
+  ctx.lineTo(footX + wallH * Math.sin(t), baseY - wallH * Math.cos(t));
+  ctx.stroke();
+}
+
+/* ---- Theme ---------------------------------------------------------------- */
+const mql = window.matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const dark = state.theme === "dark" || (state.theme === "system" && mql.matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  document.querySelectorAll("#themeSeg button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.v === state.theme));
+}
+mql.addEventListener("change", render);
+
+/* ---- Inputs ---------------------------------------------------------------- */
+els.mode.addEventListener("change", () => { state.mode = els.mode.value; render(); });
+els.nPlus.addEventListener("click", () => { state.n++; render(); });
+els.nMinus.addEventListener("click", () => { state.n = Math.max(MIN_SIDES, state.n - 1); render(); });
+
+function setSideAngle(v) {
+  state.sideAngle = clamp(v, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
+  render();
+}
+els.sValue.addEventListener("input", () => {
+  const v = parseFloat(els.sValue.value);
+  if (!Number.isNaN(v)) setSideAngle(v);
+  else if (els.sValue.value === "" || els.sValue.value === "-") setSideAngle(0);
+});
+els.sValue.addEventListener("blur", () => render());
+els.sPlus.addEventListener("click", () => setSideAngle(state.sideAngle + 1));
+els.sMinus.addEventListener("click", () => setSideAngle(state.sideAngle - 1));
+
+/* ---- Save / recall --------------------------------------------------------- */
+const dlgSave = $("dlgSave"), dlgProjects = $("dlgProjects"), dlgSettings = $("dlgSettings");
+
+$("btnSave").addEventListener("click", () => {
+  $("saveName").value = state.mode === "pictureFrame"
+    ? `${state.n}-side frame`
+    : `${state.n}-side @ ${state.sideAngle}°`;
+  dlgSave.showModal();
+});
+$("saveCancel").addEventListener("click", () => dlgSave.close());
+$("saveOk").addEventListener("click", () => {
+  const name = $("saveName").value.trim();
+  if (!name) return;
+  state.projects.push({ name, n: state.n, sideAngle: state.sideAngle, mode: state.mode });
+  persistProjects();
+  dlgSave.close();
+  toast(`Saved "${name}"`);
+});
+
+$("btnProjects").addEventListener("click", () => { renderProjects(); dlgProjects.showModal(); });
+$("projClose").addEventListener("click", () => dlgProjects.close());
+
+function renderProjects() {
+  const list = $("projList");
+  if (!state.projects.length) {
+    list.innerHTML = `<p class="hint">No saved projects yet.</p>`;
+    return;
+  }
+  list.innerHTML = "";
+  const modeLabels = { pictureFrame: "Picture Frame", miteredBox: "Mitered Box", buttJointBox: "Butt Joint Box" };
+  state.projects.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "proj";
+    const mode = p.mode ?? "miteredBox"; // legacy entries default to mitered
+    const detail = mode === "pictureFrame"
+      ? `${modeLabels[mode]} · N=${p.n}`
+      : `${modeLabels[mode]} · N=${p.n} · S=${p.sideAngle}°`;
+    row.innerHTML = `<span class="pname">${escapeHtml(p.name)}<small>${detail}</small></span>`;
+    const load = document.createElement("button");
+    load.textContent = "Load";
+    load.addEventListener("click", () => {
+      state.mode = mode;
+      state.n = Math.max(MIN_SIDES, p.n);
+      state.sideAngle = clamp(p.sideAngle, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
+      dlgProjects.close();
+      render();
+    });
+    const del = document.createElement("button");
+    del.textContent = "Delete";
+    del.addEventListener("click", () => {
+      state.projects.splice(i, 1);
+      persistProjects();
+      renderProjects();
+    });
+    row.append(load, del);
+    list.append(row);
+  });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ---- Settings ---------------------------------------------------------------- */
+$("btnSettings").addEventListener("click", () => {
+  $("setAdvanced").checked = state.advanced;
+  $("setExact").checked = state.exact;
+  dlgSettings.showModal();
+});
+$("setClose").addEventListener("click", () => dlgSettings.close());
+$("setAdvanced").addEventListener("change", (e) => {
+  state.advanced = e.target.checked; persistSettings(); render();
+});
+$("setExact").addEventListener("change", (e) => {
+  state.exact = e.target.checked; persistSettings();
+  $("precisionHint").textContent = state.exact
+    ? "Showing 4 decimal places" : "Rounded to nearest 0.5°";
+  render();
+});
+document.querySelectorAll("#themeSeg button").forEach((b) =>
+  b.addEventListener("click", () => {
+    state.theme = b.dataset.v; persistSettings(); render();
+  }));
+
+/* ---- Toast ---------------------------------------------------------------- */
+let toastTimer;
+function toast(msg) {
+  els.toast.textContent = msg;
+  els.toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2200);
+}
+
+/* ---- Boot ---------------------------------------------------------------- */
+window.addEventListener("resize", render);
+render();
+
+// Expose the math for testing (node --experimental-default-type=module not
+// needed; tests read this file and eval the script block).
+if (typeof module !== "undefined") {
+  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeForMode, formatAngle };
+}
+</script>
+</body>
+</html>
