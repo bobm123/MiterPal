@@ -2,21 +2,33 @@
 
 A smartphone app for calculating miter saw settings for compound-miter / N-sided box (stave) construction.
 
-**Status:** MVP (v0.1.0), not yet in the app stores. Calculation core ported
-and tested; calculator UI with four joint modes (Picture Frame, Mitered Box,
-Butt Joint Box, Fixed Bevel Bit), save/recall, live diagram, settings menu,
-and dark mode. The
-full app currently runs as a **Windows desktop simulation**: debug builds wrap
-the app in a phone-frame preview, so you can try the complete phone experience
-on a PC without installing anything from the Apple App Store — see
-[Try it on Windows](#try-it-on-windows-no-app-store-needed) below. iOS first
-for release, Android later.
+**Status:** MVP (v0.1.0). Calculation core ported and tested; calculator UI
+with four joint modes (Picture Frame, Mitered Box, Butt Joint Box, Fixed
+Bevel Bit), save/recall, live diagram, settings menu, and dark mode. The app
+ships two ways: an installable **web app (PWA)** you can use on a phone right
+now, and a **Flutter app** (currently running as a Windows desktop
+simulation) headed for the iOS App Store first, Android later.
+
+## Try it now — web app
+
+No install, no app store:
+
+**→ <https://bobm123.github.io/MiterPal/webapp/>**
+
+Open it in any phone, tablet, or desktop browser. To make it a home-screen
+app (recommended — full screen, works offline in the shop, and saved projects
+persist reliably):
+
+- **iOS Safari:** Share → **Add to Home Screen**
+- **Android Chrome:** menu → **Add to Home screen** (or accept the install prompt)
+
+Details, local hosting, and update notes are in
+[`webapp/README.md`](webapp/README.md).
 
 <img src="Clipboard01.png" width="320" alt="MiterPal running in the Windows phone-frame simulator: a 5-sided mitered box with sides leaning 11 degrees gives a 35 degree bevel and 8 degree miter">
 
-*A typical calculation, running in the phone-frame simulator on Windows: a
-5-sided mitered box with sides leaning 11° — set the saw to a 35° bevel and
-an 8° miter.*
+*A typical calculation: a 5-sided mitered box with sides leaning 11° — set
+the saw to a 35° bevel and an 8° miter.*
 
 ## What it does
 
@@ -36,13 +48,13 @@ The math, derivation, sanity checks, and worked examples live in [`docs/compound
 
 ## Platforms
 
-- iOS first.
-- Android support planned later.
+- **Web app (PWA):** available now — iOS, Android, and desktop browsers.
+- **Flutter app:** iOS App Store first, Android later.
 
-## Try it on Windows (no App Store needed)
+## Try it on Windows (Flutter desktop simulation)
 
-The app isn't in the app stores yet, but the complete experience runs on any
-Windows PC. One-time tool setup:
+The Flutter app isn't in the app stores yet, but the complete experience runs
+on any Windows PC. One-time tool setup:
 
 1. Install the [Flutter SDK](https://docs.flutter.dev/get-started/install/windows)
    (stable channel) and make sure `flutter` is on your PATH.
