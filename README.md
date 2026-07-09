@@ -111,5 +111,5 @@ DESIGN-QUESTIONS.md         remaining open questions
 
 Implemented: N stepper and S field (with +/− nudge and decimal entry), a live
 Bevel/Miter readout, a live polygon + lean diagram (even N rests on a flat edge),
-the at-the-saw cut checklist, save/recall of projects, and a Settings menu behind
-the gear icon (advanced D/M', 0.5°
+the in-the-workshop cut checklist, save/recall of projects, and a Settings menu behind
+the gear icon (advanced D/M', 

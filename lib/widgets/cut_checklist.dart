@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// The "at the saw" reminders from docs/compound-miter-angles.md, as a
+/// The workshop reminders from docs/compound-miter-angles.md, as a
 /// checkable list. State is local — it's a pre-cut sanity check, not data
 /// worth persisting.
 class CutChecklist extends StatefulWidget {
@@ -28,7 +28,7 @@ class _CutChecklistState extends State<CutChecklist> {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: ExpansionTile(
           shape: const Border(),
-          title: const Text('At the saw'),
+          title: const Text('In the workshop'),
           subtitle: const Text('Pre-cut checklist'),
           childrenPadding: const EdgeInsets.only(bottom: 8),
           children: <Widget>[
