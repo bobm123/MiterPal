@@ -184,4 +184,25 @@ class _ModeSelector extends StatelessWidget {
               value: value,
               underline: const SizedBox.shrink(),
               borderRadius: BorderRadius.circular(12),
-      
+              items: <DropdownMenuItem<JointMode>>[
+                for (final JointMode mode in JointMode.values)
+                  DropdownMenuItem<JointMode>(
+                    value: mode,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(mode.label),
+                    ),
+                  ),
+              ],
+              onChanged: (JointMode? mode) {
+                if (mode != null) {
+                  onChanged(mode);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -160,4 +160,16 @@ class _SideAngleFieldState extends State<SideAngleField> {
                   onPressed: () => _nudge(1),
                   icon: const Icon(Icons.add),
                 ),
-          
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.hint,
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
