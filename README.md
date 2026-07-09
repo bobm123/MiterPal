@@ -102,7 +102,7 @@ lib/
 test/                       unit tests (verified against the reference values)
 docs/                       reference math, diagrams, Windows setup, trade study
 scripts/                    canonical Python algorithm script
-webapp/                     single-file JavaScript port, for comparison (see webapp/README.md)
+webapp/                     JavaScript port, installable as a PWA (see webapp/README.md)
 DECISIONS.md                settled design choices
 DESIGN-QUESTIONS.md         remaining open questions
 ```

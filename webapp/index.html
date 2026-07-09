@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>MiterPal</title>
+<meta name="theme-color" content="#6750a4">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="MiterPal">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
   /* ---- Theme ---------------------------------------------------------- */
   :root {
@@ -667,6 +675,12 @@ function toast(msg) {
 /* ---- Boot ---------------------------------------------------------------- */
 window.addEventListener("resize", render);
 render();
+
+// PWA: register the service worker for offline use. The path is relative so
+// it works when hosted under a subpath (e.g. GitHub Pages /MiterPal/webapp/).
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
 
 // Expose the math for testing (node --experimental-default-type=module not
 // needed; tests read this file and eval the script block).
