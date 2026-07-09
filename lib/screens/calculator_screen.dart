@@ -17,9 +17,12 @@ class CalculatorScreen extends StatelessWidget {
 
   Future<void> _save(BuildContext context) async {
     final TextEditingController nameController = TextEditingController(
-      text: controller.mode == JointMode.pictureFrame
-          ? '${controller.n}-side frame'
-          : '${controller.n}-side @ ${controller.sideAngle}°',
+      text: switch (controller.mode) {
+        JointMode.pictureFrame => '${controller.n}-side frame',
+        JointMode.fixedBevelBit =>
+          '${controller.n}-side, ${controller.bitAngle}° bit',
+        _ => '${controller.n}-side @ ${controller.sideAngle}°',
+      },
     );
     final String? name = await showDialog<String>(
       context: context,
@@ -87,6 +90,9 @@ class CalculatorScreen extends StatelessWidget {
       body: ListenableBuilder(
         listenable: controller,
         builder: (BuildContext context, _) {
+          final MiterResult result = controller.result;
+          final bool frame = controller.mode == JointMode.pictureFrame;
+          final bool bitMode = controller.mode == JointMode.fixedBevelBit;
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Center(
@@ -105,7 +111,15 @@ class CalculatorScreen extends StatelessWidget {
                       minValue: CalculatorController.minSides,
                       onChanged: controller.setN,
                     ),
-                    if (controller.mode != JointMode.pictureFrame) ...<Widget>[
+                    if (bitMode) ...<Widget>[
+                      const SizedBox(height: 8),
+                      SideAngleField(
+                        label: 'Bit angle (B)',
+                        hint: 'Bevel cutter angle from vertical',
+                        value: controller.bitAngle,
+                        onChanged: controller.setBitAngle,
+                      ),
+                    ] else if (!frame) ...<Widget>[
                       const SizedBox(height: 8),
                       SideAngleField(
                         value: controller.sideAngle,
@@ -114,7 +128,7 @@ class CalculatorScreen extends StatelessWidget {
                     ],
                     const SizedBox(height: 16),
                     ResultDisplay(
-                      result: controller.result,
+                      result: result,
                       mode: controller.mode,
                       exact: controller.exactPrecision,
                       showAdvanced: controller.showAdvanced,
@@ -125,12 +139,10 @@ class CalculatorScreen extends StatelessWidget {
                         padding: const EdgeInsets.all(12),
                         child: PolygonDiagram(
                           n: controller.n,
-                          sideAngle:
-                              controller.mode == JointMode.pictureFrame
-                                  ? 0
-                                  : controller.sideAngle,
-                          showLean:
-                              controller.mode != JointMode.pictureFrame,
+                          // In bit mode the lean is an output, so draw the
+                          // computed value; otherwise draw the input.
+                          sideAngle: frame ? 0 : result.sideAngle,
+                          showLean: !frame,
                         ),
                       ),
                     ),
@@ -172,25 +184,4 @@ class _ModeSelector extends StatelessWidget {
               value: value,
               underline: const SizedBox.shrink(),
               borderRadius: BorderRadius.circular(12),
-              items: <DropdownMenuItem<JointMode>>[
-                for (final JointMode mode in JointMode.values)
-                  DropdownMenuItem<JointMode>(
-                    value: mode,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Text(mode.label),
-                    ),
-                  ),
-              ],
-              onChanged: (JointMode? mode) {
-                if (mode != null) {
-                  onChanged(mode);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+      

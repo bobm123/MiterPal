@@ -12,6 +12,10 @@ enum JointMode {
   /// Each side's end is cut as a single plane flush against the neighboring
   /// side's face.
   buttJointBox,
+
+  /// Stave construction with a fixed-angle bevel cutter (router/shaper bit):
+  /// the bit angle is given and the side lean S is the result.
+  fixedBevelBit,
 }
 
 /// Display names for [JointMode].
@@ -20,6 +24,7 @@ extension JointModeLabel on JointMode {
         JointMode.pictureFrame => 'Picture Frame',
         JointMode.miteredBox => 'Mitered Box',
         JointMode.buttJointBox => 'Butt Joint Box',
+        JointMode.fixedBevelBit => 'Fixed Bevel Bit',
       };
 }
 
@@ -47,6 +52,7 @@ class MiterResult {
     required this.miter,
     required this.miterComplement,
     required this.lean,
+    this.feasible = true,
   });
 
   /// Number of sides.
@@ -69,6 +75,10 @@ class MiterResult {
 
   /// Which way the box leans, from the sign of [sideAngle].
   final LeanDirection lean;
+
+  /// False when no geometry satisfies the inputs (only possible in
+  /// [JointMode.fixedBevelBit], when the bit angle exceeds 180/n).
+  final bool feasible;
 }
 
 double _radians(double degrees) => degrees * math.pi / 180.0;
@@ -205,10 +215,64 @@ MiterResult computeButtJoint(int n, double sideAngleDeg) {
   );
 }
 
-/// Computes the result for the given [mode].
-MiterResult computeForMode(JointMode mode, int n, double sideAngleDeg) =>
+/// Computes the resulting geometry for stave construction with a fixed-angle
+/// bevel cutter (router or shaper bit) of [bitAngleDeg] degrees from vertical.
+///
+/// This is the mitered-box relation solved the other way around: the bevel is
+/// fixed by the cutter, so the side lean S is forced:
+///
+///   S = acos(sin(B) / sin(alpha)),  alpha = 180/n
+///
+/// Staves are ripped along their long edges, so there is no table miter.
+/// The mirror solution -S is equally valid (splay out or slope in). A joint
+/// can only close when B <= 180/n; otherwise the returned result has
+/// [MiterResult.feasible] set to false.
+///
+/// Throws [ArgumentError] if [n] is less than 3.
+MiterResult computeFixedBevelBit(int n, double bitAngleDeg) {
+  if (n < 3) {
+    throw ArgumentError.value(n, 'n', 'must be >= 3');
+  }
+
+  final double alpha = _radians(180.0 / n);
+  final double ratio =
+      math.sin(_radians(bitAngleDeg)) / math.sin(alpha);
+  final double dihedral = 180.0 - 2.0 * bitAngleDeg; // from B = 90 - D/2
+
+  if (ratio > 1.0) {
+    // Bit is steeper than 180/n: the ring cannot close for this many sides.
+    return MiterResult(
+      n: n,
+      sideAngle: 0.0,
+      dihedral: dihedral,
+      bladeTilt: bitAngleDeg,
+      miter: 0.0,
+      miterComplement: 90.0,
+      lean: LeanDirection.vertical,
+      feasible: false,
+    );
+  }
+
+  final double s = _degrees(math.acos(ratio.clamp(-1.0, 1.0).toDouble()));
+
+  return MiterResult(
+    n: n,
+    sideAngle: s,
+    dihedral: dihedral,
+    bladeTilt: bitAngleDeg,
+    miter: 0.0,
+    miterComplement: 90.0,
+    lean: s > 1e-9 ? LeanDirection.outward : LeanDirection.vertical,
+  );
+}
+
+/// Computes the result for the given [mode]. [bitAngleDeg] is only used by
+/// [JointMode.fixedBevelBit].
+MiterResult computeForMode(JointMode mode, int n, double sideAngleDeg,
+        [double bitAngleDeg = 30.0]) =>
     switch (mode) {
       JointMode.pictureFrame => computePictureFrame(n),
       JointMode.miteredBox => computeCompoundMiter(n, sideAngleDeg),
       JointMode.buttJointBox => computeButtJoint(n, sideAngleDeg),
+      JointMode.fixedBevelBit => computeFixedBevelBit(n, bitAngleDeg),
     };

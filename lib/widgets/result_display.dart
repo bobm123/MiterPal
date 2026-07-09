@@ -25,28 +25,55 @@ class ResultDisplay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool frame = mode == JointMode.pictureFrame;
+    final bool bit = mode == JointMode.fixedBevelBit;
+
+    if (bit && !result.feasible) {
+      return _NoFitBanner(n: result.n);
+    }
+
     return Column(
       children: <Widget>[
         Row(
           children: <Widget>[
-            if (!frame) ...<Widget>[
+            if (bit)
               Expanded(
                 child: _PrimaryResult(
-                  label: 'Bevel (blade tilt)',
-                  value: formatAngle(result.bladeTilt, exact: exact),
+                  label: 'Side lean (S)',
+                  value: formatAngle(result.sideAngle, exact: exact),
+                ),
+              )
+            else ...<Widget>[
+              if (!frame) ...<Widget>[
+                Expanded(
+                  child: _PrimaryResult(
+                    label: 'Bevel (blade tilt)',
+                    value: formatAngle(result.bladeTilt, exact: exact),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: _PrimaryResult(
+                  label: 'Miter (from fence)',
+                  value: formatAngle(result.miter, exact: exact),
                 ),
               ),
-              const SizedBox(width: 12),
             ],
-            Expanded(
-              child: _PrimaryResult(
-                label: 'Miter (from fence)',
-                value: formatAngle(result.miter, exact: exact),
-              ),
-            ),
           ],
         ),
-        if (!frame) ...<Widget>[
+        if (bit) ...<Widget>[
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(Icons.swap_horiz,
+                  size: 18, color: Theme.of(context).colorScheme.secondary),
+              const SizedBox(width: 6),
+              Text('Works splayed outward or sloped inward (±S)',
+                  style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ),
+        ] else if (!frame) ...<Widget>[
           const SizedBox(height: 12),
           _LeanBanner(lean: result.lean),
         ],
@@ -63,16 +90,52 @@ class ResultDisplay extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
               ],
-              Expanded(
-                child: _SecondaryResult(
-                  label: "Miter complement (M')",
-                  value: formatAngle(result.miterComplement, exact: exact),
+              if (!bit)
+                Expanded(
+                  child: _SecondaryResult(
+                    label: "Miter complement (M')",
+                    value: formatAngle(result.miterComplement, exact: exact),
+                  ),
                 ),
-              ),
             ],
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Shown in Fixed Bevel Bit mode when the bit is too steep for N sides.
+class _NoFitBanner extends StatelessWidget {
+  const _NoFitBanner({required this.n});
+
+  final int n;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Card(
+      color: theme.colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.warning_amber_rounded,
+                color: theme.colorScheme.onErrorContainer),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'No fit: with $n sides the bit angle must be at most '
+                '${formatAngle(180.0 / n)} (B = 180/N). Use a shallower '
+                'bit or fewer sides.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -93,74 +156,4 @@ class _PrimaryResult extends StatelessWidget {
         child: Column(
           children: <Widget>[
             Text(
-              value,
-              style: theme.textTheme.displaySmall?.copyWith(
-                color: theme.colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onPrimaryContainer,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SecondaryResult extends StatelessWidget {
-  const _SecondaryResult({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-        child: Column(
-          children: <Widget>[
-            Text(value, style: theme.textTheme.titleLarge),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LeanBanner extends StatelessWidget {
-  const _LeanBanner({required this.lean});
-
-  final LeanDirection lean;
-
-  @override
-  Widget build(BuildContext context) {
-    final (IconData icon, String text) = switch (lean) {
-      LeanDirection.outward => (Icons.unfold_more, 'Splays outward (top wider)'),
-      LeanDirection.inward => (Icons.unfold_less, 'Slopes inward (top narrower)'),
-      LeanDirection.vertical => (Icons.vertical_align_center, 'Upright (vertical sides)'),
-    };
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        Icon(icon, size: 18, color: Theme.of(context).colorScheme.secondary),
-        const SizedBox(width: 6),
-        Text(text, style: Theme.of(context).textTheme.bodyMedium),
-      ],
-    );
-  }
-}
+              value

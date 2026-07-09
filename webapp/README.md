@@ -2,7 +2,7 @@
 
 A single-file vanilla-JavaScript port of MiterPal, built to compare against
 the Flutter version in the repo root. Same math (ported from
-`lib/models/compound_miter.dart`), same features: three joint modes, live
+`lib/models/compound_miter.dart`), same features: four joint modes, live
 bevel/miter results, polygon + lean diagram, save/recall (localStorage),
 advanced D/M′ readout, 0.5°-vs-exact precision, and system/light/dark theme.
 

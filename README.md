@@ -3,8 +3,9 @@
 A smartphone app for calculating miter saw settings for compound-miter / N-sided box (stave) construction.
 
 **Status:** MVP (v0.1.0), not yet in the app stores. Calculation core ported
-and tested; calculator UI with three joint modes (Picture Frame, Mitered Box,
-Butt Joint Box), save/recall, live diagram, settings menu, and dark mode. The
+and tested; calculator UI with four joint modes (Picture Frame, Mitered Box,
+Butt Joint Box, Fixed Bevel Bit), save/recall, live diagram, settings menu,
+and dark mode. The
 full app currently runs as a **Windows desktop simulation**: debug builds wrap
 the app in a phone-frame preview, so you can try the complete phone experience
 on a PC without installing anything from the Apple App Store — see
@@ -111,4 +112,4 @@ DESIGN-QUESTIONS.md         remaining open questions
 Implemented: N stepper and S field (with +/− nudge and decimal entry), a live
 Bevel/Miter readout, a live polygon + lean diagram (even N rests on a flat edge),
 the at-the-saw cut checklist, save/recall of projects, and a Settings menu behind
-the gear icon (advanced D/M', 0.5°-vs-exact precis
+the gear icon (advanced D/M', 0.5°

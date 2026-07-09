@@ -118,6 +118,45 @@ void main() {
     });
   });
 
+  group('computeFixedBevelBit', () {
+    test('45 degree bit with 4 sides: the classic vertical square box', () {
+      final MiterResult r = computeFixedBevelBit(4, 45);
+      expect(r.feasible, isTrue);
+      expect(r.sideAngle, closeTo(0.0, 1e-6));
+      expect(r.dihedral, closeTo(90.0, 1e-6));
+    });
+
+    test('15 degree bit with 6 sides: strongly splayed stave ring', () {
+      final MiterResult r = computeFixedBevelBit(6, 15);
+      expect(r.feasible, isTrue);
+      // S = acos(sin(15)/sin(30))
+      expect(r.sideAngle, closeTo(58.83, 0.01));
+      expect(r.dihedral, closeTo(150.0, 1e-6));
+      expect(r.lean, LeanDirection.outward);
+    });
+
+    test('inverse of the mitered box: feed B back in, get S out', () {
+      final MiterResult mitered = computeCompoundMiter(5, 10);
+      final MiterResult r = computeFixedBevelBit(5, mitered.bladeTilt);
+      expect(r.sideAngle, closeTo(10.0, 1e-6));
+    });
+
+    test('zero-degree bit: flat ring (picture-frame limit)', () {
+      final MiterResult r = computeFixedBevelBit(4, 0);
+      expect(r.sideAngle, closeTo(90.0, 1e-6));
+    });
+
+    test('bit steeper than 180/N cannot close: infeasible', () {
+      expect(computeFixedBevelBit(4, 50).feasible, isFalse);
+      expect(computeFixedBevelBit(6, 31).feasible, isFalse);
+      expect(computeFixedBevelBit(6, 30).feasible, isTrue);
+    });
+
+    test('throws for N < 3', () {
+      expect(() => computeFixedBevelBit(2, 20), throwsArgumentError);
+    });
+  });
+
   group('computeForMode', () {
     test('dispatches to the right calculation', () {
       expect(computeForMode(JointMode.pictureFrame, 4, 10).miter,
@@ -126,6 +165,8 @@ void main() {
           closeTo(45.0, 1e-6));
       expect(computeForMode(JointMode.buttJointBox, 4, 0).bladeTilt,
           closeTo(0.0, 1e-6));
+      expect(computeForMode(JointMode.fixedBevelBit, 6, 0, 15).sideAngle,
+          closeTo(58.83, 0.01));
     });
   });
 }

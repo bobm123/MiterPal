@@ -19,6 +19,8 @@
     --on-primary-container: #22005d;
     --outline: #cac4cf;
     --shadow: rgba(0,0,0,.08);
+    --error-container: #f9dedc;
+    --on-error-container: #410e0b;
   }
   [data-theme="dark"] {
     --bg: #141218;
@@ -32,6 +34,8 @@
     --on-primary-container: #e9ddff;
     --outline: #49454e;
     --shadow: rgba(0,0,0,.4);
+    --error-container: #8c1d18;
+    --on-error-container: #f9dedc;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -102,6 +106,11 @@
   }
   .secondary .num { font-size: 20px; font-weight: 600; }
   .secondary .cap { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+  .nofit {
+    flex: 1; background: var(--error-container); color: var(--on-error-container);
+    border-radius: 12px; padding: 14px 16px; font-size: 14.5px;
+    box-shadow: 0 1px 3px var(--shadow);
+  }
   #leanBanner {
     text-align: center; font-size: 14.5px; color: var(--text-dim);
     margin-bottom: 12px;
@@ -176,6 +185,7 @@
         <option value="pictureFrame">Picture Frame</option>
         <option value="miteredBox" selected>Mitered Box</option>
         <option value="buttJointBox">Butt Joint Box</option>
+        <option value="fixedBevelBit">Fixed Bevel Bit</option>
       </select>
     </div>
   </div>
@@ -192,13 +202,13 @@
 
   <div class="card" id="angleCard">
     <div class="row">
-      <span class="label">Side angle (S)</span>
+      <span class="label" id="angleLabel">Side angle (S)</span>
       <input class="value" id="sValue" inputmode="decimal" autocomplete="off">
       <span class="unit">&deg;</span>
       <button class="step" id="sMinus">&minus;</button>
       <button class="step" id="sPlus">+</button>
     </div>
-    <div class="hint">0 = upright &middot; + splays out &middot; &minus; slopes in</div>
+    <div class="hint" id="angleHint">0 = upright &middot; + splays out &middot; &minus; slopes in</div>
   </div>
 
   <div class="results" id="results"></div>
@@ -315,17 +325,31 @@ function computePictureFrame(n) {
   return result(n, 0, 180, 0, 180 / n);
 }
 
-function result(n, sideAngle, dihedral, bladeTilt, miter) {
+// Fixed bevel bit: the cutter fixes B, so the side lean S is the result.
+// Inverse of the mitered box: S = acos(sin(B)/sin(alpha)). Staves are ripped
+// along their edges (no table miter). Infeasible when B > 180/n.
+function computeFixedBevelBit(n, bitAngleDeg) {
+  if (n < 3) throw new RangeError("n must be >= 3");
+  const alpha = (180 / n) * DEG;
+  const ratio = Math.sin(bitAngleDeg * DEG) / Math.sin(alpha);
+  const dihedral = 180 - 2 * bitAngleDeg; // from B = 90 - D/2
+  if (ratio > 1) return result(n, 0, dihedral, bitAngleDeg, 0, false);
+  const s = Math.acos(clamp(ratio, -1, 1)) / DEG;
+  return result(n, s, dihedral, bitAngleDeg, 0);
+}
+
+function result(n, sideAngle, dihedral, bladeTilt, miter, feasible = true) {
   return {
-    n, sideAngle, dihedral, bladeTilt, miter,
+    n, sideAngle, dihedral, bladeTilt, miter, feasible,
     miterComplement: 90 - miter,
     lean: sideAngle > 0 ? "outward" : sideAngle < 0 ? "inward" : "vertical",
   };
 }
 
-function computeForMode(mode, n, s) {
+function computeForMode(mode, n, s, bitAngle = 30) {
   if (mode === "pictureFrame") return computePictureFrame(n);
   if (mode === "buttJointBox") return computeButtJoint(n, s);
+  if (mode === "fixedBevelBit") return computeFixedBevelBit(n, bitAngle);
   return computeCompoundMiter(n, s);
 }
 
@@ -350,6 +374,7 @@ const store = {
 const state = {
   n: 4,
   sideAngle: 10,
+  bitAngle: 30,
   mode: "miteredBox",
   ...store.load("miterpal.settings", {}),   // advanced, exact, theme
   advanced: store.load("miterpal.settings", {}).advanced ?? false,
@@ -369,6 +394,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   mode: $("mode"), nValue: $("nValue"), nMinus: $("nMinus"), nPlus: $("nPlus"),
   angleCard: $("angleCard"), sValue: $("sValue"), sMinus: $("sMinus"), sPlus: $("sPlus"),
+  angleLabel: $("angleLabel"), angleHint: $("angleHint"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -379,41 +405,58 @@ const els = {
 function render() {
   applyTheme();
   const frame = state.mode === "pictureFrame";
-  const r = computeForMode(state.mode, state.n, state.sideAngle);
+  const bit = state.mode === "fixedBevelBit";
+  const r = computeForMode(state.mode, state.n, state.sideAngle, state.bitAngle);
 
   els.mode.value = state.mode;
   els.nValue.textContent = state.n;
   els.nMinus.disabled = state.n <= MIN_SIDES;
   if (document.activeElement !== els.sValue) {
-    els.sValue.value = fmtInput(state.sideAngle);
+    els.sValue.value = fmtInput(bit ? state.bitAngle : state.sideAngle);
   }
   els.angleCard.hidden = frame;
+  els.angleLabel.textContent = bit ? "Bit angle (B)" : "Side angle (S)";
+  els.angleHint.textContent = bit
+    ? "Bevel cutter angle from vertical"
+    : "0 = upright · + splays out · − slopes in";
 
   const card = (num, cap) =>
     `<div class="result"><div class="num">${num}</div><div class="cap">${cap}</div></div>`;
-  els.results.innerHTML =
-    (frame ? "" : card(formatAngle(r.bladeTilt, state.exact), "Bevel (blade tilt)")) +
-    card(formatAngle(r.miter, state.exact), "Miter (from fence)");
+  if (bit && !r.feasible) {
+    els.results.innerHTML =
+      `<div class="nofit">⚠ No fit: with ${state.n} sides the bit angle must ` +
+      `be at most ${formatAngle(180 / state.n, state.exact)} (B = 180/N). ` +
+      `Use a shallower bit or fewer sides.</div>`;
+  } else if (bit) {
+    els.results.innerHTML = card(formatAngle(r.sideAngle, state.exact), "Side lean (S)");
+  } else {
+    els.results.innerHTML =
+      (frame ? "" : card(formatAngle(r.bladeTilt, state.exact), "Bevel (blade tilt)")) +
+      card(formatAngle(r.miter, state.exact), "Miter (from fence)");
+  }
 
-  els.leanBanner.hidden = frame;
-  els.leanBanner.textContent = {
-    outward: "↕ Splays outward (top wider)",
-    inward: "↕ Slopes inward (top narrower)",
-    vertical: "↕ Upright (vertical sides)",
-  }[r.lean];
+  els.leanBanner.hidden = frame || (bit && !r.feasible);
+  els.leanBanner.textContent = bit
+    ? "⇄ Works splayed outward or sloped inward (±S)"
+    : {
+        outward: "↕ Splays outward (top wider)",
+        inward: "↕ Slopes inward (top narrower)",
+        vertical: "↕ Upright (vertical sides)",
+      }[r.lean];
 
-  els.advanced.hidden = !state.advanced;
+  els.advanced.hidden = !state.advanced || (bit && !r.feasible);
   const sec = (num, cap) =>
     `<div class="secondary"><div class="num">${num}</div><div class="cap">${cap}</div></div>`;
   els.advanced.innerHTML =
     (frame ? "" : sec(formatAngle(r.dihedral, state.exact), "Dihedral (D)")) +
-    sec(formatAngle(r.miterComplement, state.exact), "Miter complement (M′)");
+    (bit ? "" : sec(formatAngle(r.miterComplement, state.exact), "Miter complement (M′)"));
 
   els.leanFigure.hidden = frame;
   els.topCaption.textContent = `Top view (${state.n} sides)`;
-  els.leanCaption.textContent = `Side lean (${state.sideAngle.toFixed(1)}°)`;
+  // In bit mode the lean is an output, so draw the computed value.
+  els.leanCaption.textContent = `Side lean (${r.sideAngle.toFixed(1)}°)`;
   drawTopView();
-  if (!frame) drawLeanView();
+  if (!frame) drawLeanView(r.sideAngle);
 }
 
 function fmtInput(v) { return Number.isInteger(v) ? v.toFixed(0) : String(v); }
@@ -462,7 +505,7 @@ function drawTopView() {
   ctx.stroke();
 }
 
-function drawLeanView() {
+function drawLeanView(angleDeg) {
   const [ctx, w, h] = setupCanvas(els.leanView);
   const baseY = h * 0.85, wallH = h * 0.7, footX = w / 2;
   // Ground line.
@@ -476,7 +519,7 @@ function drawLeanView() {
   ctx.beginPath(); ctx.moveTo(footX, baseY); ctx.lineTo(footX, baseY - wallH); ctx.stroke();
   ctx.setLineDash([]);
   // The leaning wall; positive S tips the top outward (right).
-  const t = state.sideAngle * DEG;
+  const t = angleDeg * DEG;
   ctx.strokeStyle = cssVar("--primary");
   ctx.lineWidth = 3;
   ctx.lineCap = "round";
@@ -501,25 +544,34 @@ els.mode.addEventListener("change", () => { state.mode = els.mode.value; render(
 els.nPlus.addEventListener("click", () => { state.n++; render(); });
 els.nMinus.addEventListener("click", () => { state.n = Math.max(MIN_SIDES, state.n - 1); render(); });
 
-function setSideAngle(v) {
-  state.sideAngle = clamp(v, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
+// The angle card edits S in the box modes and B in Fixed Bevel Bit mode.
+function setAngle(v) {
+  if (state.mode === "fixedBevelBit") {
+    state.bitAngle = clamp(v, 0, MAX_SIDE_ANGLE); // a cutter can't be negative
+  } else {
+    state.sideAngle = clamp(v, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
+  }
   render();
+}
+function currentAngle() {
+  return state.mode === "fixedBevelBit" ? state.bitAngle : state.sideAngle;
 }
 els.sValue.addEventListener("input", () => {
   const v = parseFloat(els.sValue.value);
-  if (!Number.isNaN(v)) setSideAngle(v);
-  else if (els.sValue.value === "" || els.sValue.value === "-") setSideAngle(0);
+  if (!Number.isNaN(v)) setAngle(v);
+  else if (els.sValue.value === "" || els.sValue.value === "-") setAngle(0);
 });
 els.sValue.addEventListener("blur", () => render());
-els.sPlus.addEventListener("click", () => setSideAngle(state.sideAngle + 1));
-els.sMinus.addEventListener("click", () => setSideAngle(state.sideAngle - 1));
+els.sPlus.addEventListener("click", () => setAngle(currentAngle() + 1));
+els.sMinus.addEventListener("click", () => setAngle(currentAngle() - 1));
 
 /* ---- Save / recall --------------------------------------------------------- */
 const dlgSave = $("dlgSave"), dlgProjects = $("dlgProjects"), dlgSettings = $("dlgSettings");
 
 $("btnSave").addEventListener("click", () => {
-  $("saveName").value = state.mode === "pictureFrame"
-    ? `${state.n}-side frame`
+  $("saveName").value =
+    state.mode === "pictureFrame" ? `${state.n}-side frame`
+    : state.mode === "fixedBevelBit" ? `${state.n}-side, ${state.bitAngle}° bit`
     : `${state.n}-side @ ${state.sideAngle}°`;
   dlgSave.showModal();
 });
@@ -527,7 +579,8 @@ $("saveCancel").addEventListener("click", () => dlgSave.close());
 $("saveOk").addEventListener("click", () => {
   const name = $("saveName").value.trim();
   if (!name) return;
-  state.projects.push({ name, n: state.n, sideAngle: state.sideAngle, mode: state.mode });
+  state.projects.push({ name, n: state.n, sideAngle: state.sideAngle,
+    mode: state.mode, bitAngle: state.bitAngle });
   persistProjects();
   dlgSave.close();
   toast(`Saved "${name}"`);
@@ -543,13 +596,15 @@ function renderProjects() {
     return;
   }
   list.innerHTML = "";
-  const modeLabels = { pictureFrame: "Picture Frame", miteredBox: "Mitered Box", buttJointBox: "Butt Joint Box" };
+  const modeLabels = { pictureFrame: "Picture Frame", miteredBox: "Mitered Box",
+    buttJointBox: "Butt Joint Box", fixedBevelBit: "Fixed Bevel Bit" };
   state.projects.forEach((p, i) => {
     const row = document.createElement("div");
     row.className = "proj";
     const mode = p.mode ?? "miteredBox"; // legacy entries default to mitered
-    const detail = mode === "pictureFrame"
-      ? `${modeLabels[mode]} · N=${p.n}`
+    const detail =
+      mode === "pictureFrame" ? `${modeLabels[mode]} · N=${p.n}`
+      : mode === "fixedBevelBit" ? `${modeLabels[mode]} · N=${p.n} · B=${p.bitAngle ?? 30}°`
       : `${modeLabels[mode]} · N=${p.n} · S=${p.sideAngle}°`;
     row.innerHTML = `<span class="pname">${escapeHtml(p.name)}<small>${detail}</small></span>`;
     const load = document.createElement("button");
@@ -558,6 +613,7 @@ function renderProjects() {
       state.mode = mode;
       state.n = Math.max(MIN_SIDES, p.n);
       state.sideAngle = clamp(p.sideAngle, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
+      state.bitAngle = clamp(p.bitAngle ?? 30, 0, MAX_SIDE_ANGLE);
       dlgProjects.close();
       render();
     });
@@ -615,7 +671,7 @@ render();
 // Expose the math for testing (node --experimental-default-type=module not
 // needed; tests read this file and eval the script block).
 if (typeof module !== "undefined") {
-  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeForMode, formatAngle };
+  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle };
 }
 </script>
 </body>

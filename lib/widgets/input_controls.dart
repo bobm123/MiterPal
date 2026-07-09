@@ -51,19 +51,25 @@ class SidesStepper extends StatelessWidget {
   }
 }
 
-/// A numeric field for the side angle S (accepts negative and decimal values).
+/// A numeric angle field (accepts negative and decimal values).
 ///
-/// Keeps its own [TextEditingController] so typing is smooth, and re-syncs the
-/// text when [value] changes from outside (e.g. loading a saved project).
+/// Defaults to the side angle S but is reusable for other angles (e.g. the
+/// fixed bevel-bit angle) via [label] and [hint]. Keeps its own
+/// [TextEditingController] so typing is smooth, and re-syncs the text when
+/// [value] changes from outside (e.g. loading a saved project).
 class SideAngleField extends StatefulWidget {
   const SideAngleField({
     super.key,
     required this.value,
     required this.onChanged,
+    this.label = 'Side angle (S)',
+    this.hint = '0 = upright · + splays out · − slopes in',
   });
 
   final double value;
   final ValueChanged<double> onChanged;
+  final String label;
+  final String hint;
 
   @override
   State<SideAngleField> createState() => _SideAngleFieldState();
@@ -113,7 +119,7 @@ class _SideAngleFieldState extends State<SideAngleField> {
               children: <Widget>[
                 Expanded(
                   child:
-                      Text('Side angle (S)', style: theme.textTheme.labelLarge),
+                      Text(widget.label, style: theme.textTheme.labelLarge),
                 ),
                 SizedBox(
                   width: 88,
@@ -154,16 +160,4 @@ class _SideAngleFieldState extends State<SideAngleField> {
                   onPressed: () => _nudge(1),
                   icon: const Icon(Icons.add),
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '0 = upright · + splays out · − slopes in',
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+          

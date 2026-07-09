@@ -21,6 +21,7 @@ class CalculatorController extends ChangeNotifier {
   // Defaults per DECISIONS.md: square box, S = 10°.
   int _n = 4;
   double _sideAngle = 10.0;
+  double _bitAngle = 30.0;
   JointMode _mode = JointMode.miteredBox;
 
   bool _exactPrecision = false; // false = round to 0.5°
@@ -37,6 +38,7 @@ class CalculatorController extends ChangeNotifier {
 
   int get n => _n;
   double get sideAngle => _sideAngle;
+  double get bitAngle => _bitAngle;
   JointMode get mode => _mode;
   bool get exactPrecision => _exactPrecision;
   bool get showAdvanced => _showAdvanced;
@@ -44,7 +46,7 @@ class CalculatorController extends ChangeNotifier {
   List<SavedProject> get saved => List<SavedProject>.unmodifiable(_saved);
 
   /// The current calculation.
-  MiterResult get result => computeForMode(_mode, _n, _sideAngle);
+  MiterResult get result => computeForMode(_mode, _n, _sideAngle, _bitAngle);
 
   void setMode(JointMode value) {
     if (value != _mode) {
@@ -69,6 +71,15 @@ class CalculatorController extends ChangeNotifier {
         value.clamp(-maxSideAngle, maxSideAngle).toDouble();
     if (clamped != _sideAngle) {
       _sideAngle = clamped;
+      notifyListeners();
+    }
+  }
+
+  void setBitAngle(double value) {
+    // A bevel cutter's angle is physically between 0 (straight) and 90.
+    final double clamped = value.clamp(0.0, maxSideAngle).toDouble();
+    if (clamped != _bitAngle) {
+      _bitAngle = clamped;
       notifyListeners();
     }
   }
@@ -111,8 +122,12 @@ class CalculatorController extends ChangeNotifier {
   }
 
   void saveProject(String name) {
-    _saved.add(
-        SavedProject(name: name, n: _n, sideAngle: _sideAngle, mode: _mode));
+    _saved.add(SavedProject(
+        name: name,
+        n: _n,
+        sideAngle: _sideAngle,
+        mode: _mode,
+        bitAngle: _bitAngle));
     notifyListeners();
     _persist();
   }
@@ -122,6 +137,7 @@ class CalculatorController extends ChangeNotifier {
     setMode(project.mode);
     setN(project.n);
     setSideAngle(project.sideAngle);
+    setBitAngle(project.bitAngle);
   }
 
   void deleteProject(SavedProject project) {

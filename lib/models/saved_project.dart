@@ -7,6 +7,7 @@ class SavedProject {
     required this.n,
     required this.sideAngle,
     this.mode = JointMode.miteredBox,
+    this.bitAngle = 30.0,
   });
 
   final String name;
@@ -14,11 +15,15 @@ class SavedProject {
   final double sideAngle;
   final JointMode mode;
 
+  /// Cutter angle for [JointMode.fixedBevelBit]; unused by other modes.
+  final double bitAngle;
+
   Map<String, dynamic> toJson() => {
         'name': name,
         'n': n,
         'sideAngle': sideAngle,
         'mode': mode.name,
+        'bitAngle': bitAngle,
       };
 
   factory SavedProject.fromJson(Map<String, dynamic> json) => SavedProject(
@@ -29,5 +34,6 @@ class SavedProject {
         // treat them as the original mitered box.
         mode: JointMode.values.asNameMap()[json['mode'] as String?] ??
             JointMode.miteredBox,
+        bitAngle: (json['bitAngle'] as num?)?.toDouble() ?? 30.0,
       );
 }

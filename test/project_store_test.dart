@@ -70,5 +70,20 @@ void main() {
       'sideAngle': 12.5,
     });
     expect(p.mode, JointMode.miteredBox);
+    expect(p.bitAngle, 30.0);
+  });
+
+  test('bit angle survives a save/load round trip', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final ProjectStore store = ProjectStore();
+
+    await store.save(const <SavedProject>[
+      SavedProject(name: 'Stave ring', n: 8, sideAngle: 0,
+          mode: JointMode.fixedBevelBit, bitAngle: 15),
+    ]);
+
+    final List<SavedProject> loaded = await store.load();
+    expect(loaded.single.mode, JointMode.fixedBevelBit);
+    expect(loaded.single.bitAngle, 15.0);
   });
 }
