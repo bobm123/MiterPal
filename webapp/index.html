@@ -178,10 +178,14 @@
   .geo-table td { text-align: right; padding: 5px 6px; font-variant-numeric: tabular-nums; }
   .geo-table th:first-child, .geo-table td:first-child { text-align: left; }
   .geo-table td:first-child { font-weight: 600; color: var(--primary); }
-  #geoSvgBtn {
+  #geoSvgBtn, #geoModBtn {
     display: block; margin: 12px auto 4px; border: none; border-radius: 20px;
     padding: 10px 20px; font-size: 15px; font-weight: 500; cursor: pointer;
     background: var(--primary); color: var(--on-primary);
+  }
+  #geoModBtn {
+    margin-top: 6px;
+    background: var(--primary-container); color: var(--on-primary-container);
   }
 
   .toast {
@@ -263,7 +267,8 @@
   <div class="card" id="geoCard" hidden>
     <table class="geo-table" id="geoTable"></table>
     <div class="hint" id="geoHint"></div>
-    <button id="geoSvgBtn" hidden>Download SVG cut file</button>
+    <button id="geoSvgBtn" hidden>Download SVG — whole model</button>
+    <button id="geoModBtn" hidden>Download SVG — one module</button>
   </div>
 
   <div class="card">
@@ -644,8 +649,16 @@ function geodesic(base, subdiv) {
    net automatically falls back to one piece per patch.                    */
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
+// force === "module" unfolds just one base-face patch: the repeating unit
+// you cut N times (N = base face count) and join to build the whole sphere.
 function computePaperNet(base, subdiv, force) {
-  if (base === "cube" && subdiv === 0) return flatCubeNet();
+  if (base === "cube" && subdiv === 0) {
+    if (force !== "module") return flatCubeNet();
+    const s = 2 / Math.sqrt(3);
+    return { polys: [[[0, 0], [s, 0], [s, s], [0, s]]], folds: [],
+             cuts: [[0, 0, s, 0], [s, 0, s, s], [s, s, 0, s], [0, s, 0, 0]],
+             pieces: 1, bbox: { x0: 0, y0: 0, x1: s, y1: s } };
+  }
   const g = geodesic(base, subdiv);
   const { verts, faces, faceBase } = g.mesh;
   const F = faces.length;
@@ -789,13 +802,20 @@ function computePaperNet(base, subdiv, force) {
         const a = polys[f][fv.indexOf(e.i)], b = polys[f][fv.indexOf(e.j)];
         return [a[0], a[1], b[0], b[1]];
       };
+      // In module mode only one patch is placed; skip unplaced lips.
       if (treePairs.has(Math.min(f1, f2) + "_" + Math.max(f1, f2))) folds.push(seg(f1));
-      else { cuts.push(seg(f1)); cuts.push(seg(f2)); }
+      else {
+        if (polys[f1]) cuts.push(seg(f1));
+        if (polys[f2]) cuts.push(seg(f2));
+      }
     }
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-    for (const p of polys) for (const [px, py] of p) {
-      x0 = Math.min(x0, px); y0 = Math.min(y0, py);
-      x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+    for (const p of polys) {
+      if (!p) continue;
+      for (const [px, py] of p) {
+        x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+        x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+      }
     }
     return { polys, folds, cuts, pieces: nPieces, bbox: { x0, y0, x1, y1 } };
   }
@@ -951,6 +971,7 @@ function computePaperNet(base, subdiv, force) {
   // Prefer the classic patch-tree layouts (nicest nets) when they don't
   // self-overlap; otherwise fall back to greedy collision-tested growth,
   // which is non-overlapping by construction.
+  if (force === "module") return unfoldPieces([[0]], "bfs", "mid");
   if (force) {
     return force === "greedy" ? greedyNet()
       : unfoldPieces(clusterPatches(force[0] ?? nPatch), force[1], force[2]);
@@ -1023,11 +1044,16 @@ function flatCubeNet() {
 }
 
 const paperCache = new Map();
-function paperNet(base, subdiv) {
-  const key = base + "/" + subdiv;
-  if (!paperCache.has(key)) paperCache.set(key, computePaperNet(base, subdiv));
+function paperNet(base, subdiv, module) {
+  const key = base + "/" + subdiv + (module ? "/module" : "");
+  if (!paperCache.has(key)) {
+    paperCache.set(key, computePaperNet(base, subdiv, module ? "module" : undefined));
+  }
   return paperCache.get(key);
 }
+
+// How many copies of the repeating module build the whole sphere.
+const GEO_MODULE_COUNT = { tetrahedron: 4, cube: 6, octahedron: 8, icosahedron: 20 };
 
 // SVG cut file: red = cut, dashed blue = fold (score). Coordinates are the
 // model's length units rendered as millimetres.
@@ -1119,7 +1145,7 @@ const els = {
   angleLabel: $("angleLabel"), angleHint: $("angleHint"),
   geoBaseCard: $("geoBaseCard"), geoBase: $("geoBase"),
   geoCard: $("geoCard"), geoTable: $("geoTable"), geoHint: $("geoHint"),
-  geoSvgBtn: $("geoSvgBtn"),
+  geoSvgBtn: $("geoSvgBtn"), geoModBtn: $("geoModBtn"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -1231,6 +1257,9 @@ function renderGeodesic() {
   els.leanBanner.hidden = true;
   els.advanced.hidden = true;
   els.geoSvgBtn.hidden = !paper;
+  els.geoModBtn.hidden = !paper;
+  els.geoModBtn.textContent =
+    `Download SVG — one module (cut ${GEO_MODULE_COUNT[state.geoBase]})`;
 
   // Cut list table: one row per edge class.
   const R = state.geoRadius;
@@ -1249,7 +1278,9 @@ function renderGeodesic() {
         ? ` in ${net.pieces} pieces (a single sheet would overlap itself)`
         : " in one connected piece"}: solid lines are cuts, dashed lines are ` +
       "folds (score them). The slits between triangles close up as the " +
-      "sphere rounds out. The SVG downloads sized in millimetres — with " +
+      "sphere rounds out. Download the whole model, or one repeating module " +
+      `(a single base face — cut ${GEO_MODULE_COUNT[state.geoBase]} copies ` +
+      "and join them at the cut edges). SVGs are sized in millimetres — with " +
       `R = ${fmtInput(state.geoRadius)}, that's a ${fmtInput(state.geoRadius)} mm ` +
       "radius; rescale in your cutter software if you used other units."
     : strut
@@ -1437,20 +1468,24 @@ els.geoBase.addEventListener("change", () => { state.geoBase = els.geoBase.value
 document.querySelectorAll("#geoConSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.geoCon = b.dataset.v; render(); }));
 
-els.geoSvgBtn.addEventListener("click", () => {
-  const net = paperNet(state.geoBase, state.geoSubdiv);
+function downloadPaperSVG(module) {
+  const net = paperNet(state.geoBase, state.geoSubdiv, module);
+  const copies = GEO_MODULE_COUNT[state.geoBase];
   const title = `${GEO_BASE_LABELS[state.geoBase]}, ${state.geoSubdiv} ` +
-    `subdivision${state.geoSubdiv === 1 ? "" : "s"}, R=${state.geoRadius}`;
+    `subdivision${state.geoSubdiv === 1 ? "" : "s"}, R=${state.geoRadius}` +
+    (module ? ` — one module, cut ${copies} copies and join at cut edges` : "");
   const blob = new Blob([paperSVG(net, state.geoRadius, title)],
     { type: "image/svg+xml" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `miterpal-${state.geoBase}-${state.geoSubdiv}subdiv` +
-    `-R${state.geoRadius}-net.svg`;
+    `-R${state.geoRadius}-${module ? `module-cut${copies}` : "net"}.svg`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  toast("SVG net downloaded");
-});
+  toast(module ? `Module SVG downloaded — cut ${copies} copies` : "SVG net downloaded");
+}
+els.geoSvgBtn.addEventListener("click", () => downloadPaperSVG(false));
+els.geoModBtn.addEventListener("click", () => downloadPaperSVG(true));
 
 // The angle card edits S in the box modes, B in Fixed Bevel Bit mode, and
 // the sphere radius in Geodesic Sphere mode.
