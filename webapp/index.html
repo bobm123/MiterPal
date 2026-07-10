@@ -403,7 +403,9 @@ function geoBaseMesh(name) {
   if (name === "cube") {
     // Square faces can't feed the triangle subdivider directly, so each face
     // is pre-triangulated through its center, with the center vertex pushed
-    // out to the circumsphere (4 triangles per face, 24 total at subdiv 0).
+    // out to the circumsphere (4 triangles per face, 24 total). This counts
+    // as the cube's first subdivision step; subdivision 0 is the true flat
+    // cube, special-cased in computeGeodesic.
     const c = 1 / Math.sqrt(3);
     const verts = [
       [c, c, c], [c, c, -c], [c, -c, c], [c, -c, -c],       // corners 0-7
@@ -493,10 +495,38 @@ function edgeLabel(i) {
   return s;
 }
 
+// The un-subdivided cube keeps its flat square faces: 6 panels, 12 edges,
+// one edge class, 90° dihedral everywhere (45° bevel — the classic box).
+function flatCube() {
+  const c = 1 / Math.sqrt(3);
+  const verts = [];
+  for (const x of [c, -c]) for (const y of [c, -c]) for (const z of [c, -c]) {
+    verts.push([x, y, z]);
+  }
+  const edgeList = [];
+  for (let i = 0; i < 8; i++) {
+    for (let j = i + 1; j < 8; j++) {
+      const diff = (verts[i][0] !== verts[j][0]) + (verts[i][1] !== verts[j][1]) +
+                   (verts[i][2] !== verts[j][2]);
+      if (diff === 1) edgeList.push({ i, j });
+    }
+  }
+  return {
+    v: 8, e: 12, f: 6,
+    classes: [{ label: "A", chord: 2 * c, dihedral: 90, bevel: 45, count: 12 }],
+    panels: [{ combo: "A-A-A-A", count: 6 }],
+    mesh: { verts, faces: [] },
+    edgeList,
+  };
+}
+
 // Full analysis for a unit-radius sphere. Chords scale by the user's radius.
 function computeGeodesic(base, subdiv) {
+  if (base === "cube" && subdiv === 0) return flatCube();
   let mesh = geoBaseMesh(base);
-  for (let i = 0; i < subdiv; i++) mesh = geoSubdivide(mesh);
+  // For the cube, the face triangulation in geoBaseMesh is subdivision 1.
+  const steps = base === "cube" ? subdiv - 1 : subdiv;
+  for (let i = 0; i < steps; i++) mesh = geoSubdivide(mesh);
   const { verts, faces } = mesh;
   const normals = faces.map((f) => geoFaceNormal(verts, f));
 
@@ -759,10 +789,11 @@ function renderGeodesic() {
       g.panels.map((p) => `${p.count}× ${p.combo}`).join(", ") +
       ". Bevel is measured from square, on every panel edge — both mating " +
       "panels get the same bevel." +
-      (state.geoBase === "cube"
-        ? " Square faces are pre-triangulated: a vertex is added at each " +
-          "face center (on the sphere), making 4 triangles per face."
-        : "");
+      (state.geoBase !== "cube" ? ""
+        : state.geoSubdiv === 0
+          ? " 0 subdivisions is the true cube: flat square panels, 45° bevels."
+          : " Square faces are pre-triangulated: a vertex is added at each " +
+            "face center (on the sphere), making 4 triangles per face.");
 
   els.leanFigure.hidden = true;
   els.topCaption.textContent =
@@ -775,13 +806,16 @@ function renderGeodesic() {
 function drawGeoView(g) {
   const [ctx, w, h] = setupCanvas(els.topView);
   const cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 * 0.94;
-  // Fixed 3/4 rotation so a face pattern is visible rather than edge-on.
-  const ay = -0.55, ax = 0.42;
+  // Fixed 3/4 rotation plus a slight roll so low-poly shapes don't project
+  // with overlapping / edge-on lines and stay easy to read.
+  const ay = -0.62, ax = 0.35, az = 0.16;
   const cy1 = Math.cos(ay), sy1 = Math.sin(ay), cx1 = Math.cos(ax), sx1 = Math.sin(ax);
+  const cz1 = Math.cos(az), sz1 = Math.sin(az);
   const P = g.mesh.verts.map(([x, y, z]) => {
     const x1 = x * cy1 + z * sy1, z1 = -x * sy1 + z * cy1;      // rotate Y
     const y2 = y * cx1 - z1 * sx1, z2 = y * sx1 + z1 * cx1;     // rotate X
-    return [cx + R * x1, cy - R * y2, z2];
+    const x3 = x1 * cz1 - y2 * sz1, y3 = x1 * sz1 + y2 * cz1;   // roll Z
+    return [cx + R * x3, cy - R * y3, z2];
   });
   // Back edges faint first, then front edges on top.
   for (const front of [false, true]) {
