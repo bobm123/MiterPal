@@ -31,10 +31,10 @@ we'll refine these live.
 - Offline-only (no accounts/network)? Almost certainly yes — confirm.
 
 ## Geodesic sphere mode — future work
-- **Hub-and-strut construction**: strut lengths are already shown; still to
-  do are the end-cut angles (axial angle at each strut end so the end faces
-  aim at the sphere center) and hub geometry (how many struts meet, at what
-  face angles).
+- **Hub-and-strut refinements**: lengths, end-cut angles, and hub classes
+  (count, valence, strut composition) are implemented. Still open: azimuth
+  angles between adjacent struts around a hub (for fabricating hub plates),
+  and a hub-diameter allowance that shortens strut cut lengths automatically.
 - **Paper cutting output**: a zero-thickness construction option — unfold
   each panel type flat (bevels don't matter at paper thickness) and generate
   an SVG cut file, with tabs for gluing, that can be sent to a CNC paper

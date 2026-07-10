@@ -511,10 +511,13 @@ function flatCube() {
       if (diff === 1) edgeList.push({ i, j });
     }
   }
+  const chord = 2 * c;
   return {
     v: 8, e: 12, f: 6,
-    classes: [{ label: "A", chord: 2 * c, dihedral: 90, bevel: 45, count: 12 }],
+    classes: [{ label: "A", chord, dihedral: 90, bevel: 45, count: 12,
+                endCut: Math.asin(chord / 2) / DEG }],
     panels: [{ combo: "A-A-A-A", count: 6 }],
+    hubs: [{ count: 8, valence: 3, combo: "3A" }],
     mesh: { verts, faces: [] },
     edgeList,
   };
@@ -564,7 +567,12 @@ function computeGeodesic(base, subdiv) {
     e.cls = c;
   }
   const classes = [...classMap.values()].sort((x, y) => x.chord - y.chord);
-  classes.forEach((c, i) => { c.label = edgeLabel(i); });
+  classes.forEach((c, i) => {
+    c.label = edgeLabel(i);
+    // Hub-and-strut: half the chord's central angle. Cutting each strut end
+    // this far off square makes the end face aim at the sphere center.
+    c.endCut = Math.asin(clamp(c.chord / 2, -1, 1)) / DEG;
+  });
 
   // Panel types: group faces by their (sorted) edge-class composition.
   const edgeOf = (i, j) => edgeMap.get(i < j ? i * 65536 + j : j * 65536 + i);
@@ -580,9 +588,27 @@ function computeGeodesic(base, subdiv) {
     .map(([combo, count]) => ({ combo, count }))
     .sort((x, y) => y.count - x.count);
 
+  // Hub classes: group vertices by the multiset of strut classes meeting there.
+  const incident = Array.from({ length: verts.length }, () => []);
+  for (const e of edgeMap.values()) {
+    incident[e.i].push(e.cls.label);
+    incident[e.j].push(e.cls.label);
+  }
+  const hubMap = new Map();
+  for (const labels of incident) {
+    const tally = {};
+    for (const l of labels) tally[l] = (tally[l] ?? 0) + 1;
+    const combo = Object.keys(tally).sort()
+      .map((l) => `${tally[l]}${l}`).join("+");
+    const h = hubMap.get(combo) ?? { combo, valence: labels.length, count: 0 };
+    h.count++;
+    hubMap.set(combo, h);
+  }
+  const hubs = [...hubMap.values()].sort((x, y) => y.count - x.count);
+
   return {
     v: verts.length, e: edgeMap.size, f: faces.length,
-    classes, panels, mesh, edgeList: [...edgeMap.values()],
+    classes, panels, hubs, mesh, edgeList: [...edgeMap.values()],
   };
 }
 
@@ -774,17 +800,19 @@ function renderGeodesic() {
   // Cut list table: one row per edge class.
   const R = state.geoRadius;
   const head = strut
-    ? `<tr><th>Strut</th><th>Qty</th><th>Length</th></tr>`
+    ? `<tr><th>Strut</th><th>Qty</th><th>Length</th><th>End cut</th></tr>`
     : `<tr><th>Edge</th><th>Qty</th><th>Length</th><th>Edge bevel</th></tr>`;
   els.geoTable.innerHTML = head + g.classes.map((c) =>
     `<tr><td>${c.label}</td><td>${c.count}</td>` +
     `<td>${formatLen(c.chord * R, state.exact)}</td>` +
-    (strut ? "" : `<td>${formatAngle(c.bevel, state.exact)}</td>`) +
+    `<td>${formatAngle(strut ? c.endCut : c.bevel, state.exact)}</td>` +
     `</tr>`).join("");
 
   els.geoHint.innerHTML = strut
-    ? "Lengths are hub-center to hub-center chords. Hub-and-strut end-cut " +
-      "angles are on the roadmap — for now, panels mode has the full cut data."
+    ? "Lengths are hub-center to hub-center — subtract your hub fitting's " +
+      "reach at each end. End cut is how far off square to cut both strut " +
+      "ends so they aim at the sphere center. Hubs: " +
+      g.hubs.map((h) => `${h.count}× ${h.valence}-way (${h.combo})`).join(", ") + "."
     : `${g.f} panels in ${g.panels.length} shape${g.panels.length > 1 ? "s" : ""}: ` +
       g.panels.map((p) => `${p.count}× ${p.combo}`).join(", ") +
       ". Bevel is measured from square, on every panel edge — both mating " +
