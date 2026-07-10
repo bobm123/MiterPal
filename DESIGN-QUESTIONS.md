@@ -35,10 +35,10 @@ we'll refine these live.
   (count, valence, strut composition) are implemented. Still open: azimuth
   angles between adjacent struts around a hub (for fabricating hub plates),
   and a hub-diameter allowance that shortens strut cut lengths automatically.
-- **Paper cutting output**: a zero-thickness construction option — unfold
-  each panel type flat (bevels don't matter at paper thickness) and generate
-  an SVG cut file, with tabs for gluing, that can be sent to a CNC paper
-  cutter. Useful for scale models before committing lumber.
+- **Paper cutting refinements**: the connected-net SVG output (cuts + fold
+  scores, collision-free unfolding) is implemented. Still open: glue tabs
+  along cut edges, labeling matching cut-edge pairs so assembly is easier,
+  and a page-size option (tile the net across A4/Letter sheets).
 
 ## Non-functional
 - App name/branding, icon, color scheme?

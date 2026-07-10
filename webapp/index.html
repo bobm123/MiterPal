@@ -178,6 +178,11 @@
   .geo-table td { text-align: right; padding: 5px 6px; font-variant-numeric: tabular-nums; }
   .geo-table th:first-child, .geo-table td:first-child { text-align: left; }
   .geo-table td:first-child { font-weight: 600; color: var(--primary); }
+  #geoSvgBtn {
+    display: block; margin: 12px auto 4px; border: none; border-radius: 20px;
+    padding: 10px 20px; font-size: 15px; font-weight: 500; cursor: pointer;
+    background: var(--primary); color: var(--on-primary);
+  }
 
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
@@ -225,6 +230,7 @@
       <div class="seg" id="geoConSeg">
         <button data-v="panel">Panels</button>
         <button data-v="strut">Struts</button>
+        <button data-v="paper">Paper</button>
       </div>
     </div>
   </div>
@@ -257,6 +263,7 @@
   <div class="card" id="geoCard" hidden>
     <table class="geo-table" id="geoTable"></table>
     <div class="hint" id="geoHint"></div>
+    <button id="geoSvgBtn" hidden>Download SVG cut file</button>
   </div>
 
   <div class="card">
@@ -463,12 +470,16 @@ function geoSubdivide(mesh) {
     midCache.set(key, idx);
     return idx;
   };
-  const faces = [];
-  for (const [a, b, c] of mesh.faces) {
+  const faces = [], faceBase = [];
+  mesh.faces.forEach(([a, b, c], fi) => {
     const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a);
     faces.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
-  }
-  return { verts, faces };
+    // Track which base-solid face each triangle descends from (the paper
+    // unfolder groups triangles into patches by base face).
+    const base = mesh.faceBase ? mesh.faceBase[fi] : fi;
+    faceBase.push(base, base, base, base);
+  });
+  return { verts, faces, faceBase };
 }
 
 const vSub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -527,6 +538,9 @@ function flatCube() {
 function computeGeodesic(base, subdiv) {
   if (base === "cube" && subdiv === 0) return flatCube();
   let mesh = geoBaseMesh(base);
+  // Patch id per face: for the cube, the 4 kis-triangles of one square face
+  // belong to the same patch.
+  mesh.faceBase = mesh.faces.map((_, i) => base === "cube" ? i >> 2 : i);
   // For the cube, the face triangulation in geoBaseMesh is subdivision 1.
   const steps = base === "cube" ? subdiv - 1 : subdiv;
   for (let i = 0; i < steps; i++) mesh = geoSubdivide(mesh);
@@ -619,6 +633,421 @@ function geodesic(base, subdiv) {
   return geoCache.get(key);
 }
 
+/* ---- Paper: unfold the sphere into a flat cut-and-fold net --------------
+   Rigid unfolding through a spanning tree of the face-adjacency graph:
+   tree edges become fold (score) lines, every other edge is cut. Because
+   the surface is positively curved, cuts open into slits in the flat net
+   and close back up as the sphere takes shape. Triangles are grouped into
+   patches by base-solid face; patches hang off each other through the
+   middle of their shared base edge. If a single connected piece would
+   self-overlap (heavy curvature per patch, e.g. tetrahedron bases), the
+   net automatically falls back to one piece per patch.                    */
+const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+function computePaperNet(base, subdiv, force) {
+  if (base === "cube" && subdiv === 0) return flatCubeNet();
+  const g = geodesic(base, subdiv);
+  const { verts, faces, faceBase } = g.mesh;
+  const F = faces.length;
+
+  // Face adjacency and patch adjacency (with candidate connector edges).
+  const adj = Array.from({ length: F }, () => []);
+  const patchPairs = new Map();
+  for (const e of g.edgeList) {
+    const [f1, f2] = e.faces;
+    adj[f1].push({ nbr: f2, i: e.i, j: e.j });
+    adj[f2].push({ nbr: f1, i: e.i, j: e.j });
+    const b1 = faceBase[f1], b2 = faceBase[f2];
+    if (b1 !== b2) {
+      const key = Math.min(b1, b2) + ":" + Math.max(b1, b2);
+      if (!patchPairs.has(key)) patchPairs.set(key, []);
+      patchPairs.get(key).push(e);
+    }
+  }
+  const nPatch = faceBase.reduce((m, b) => Math.max(m, b), 0) + 1;
+  const patchFaces = Array.from({ length: nPatch }, () => []);
+  faces.forEach((f, fi) => patchFaces[faceBase[fi]].push(fi));
+
+  // Pick the connector edge along the shared patch border: the middle edge
+  // ("mid") or an end edge ("end" — hinging at a corner lets the cut lips
+  // open as a V instead of bowing into each other).
+  function connector(p, q, where = "mid") {
+    const cands = patchPairs.get(Math.min(p, q) + ":" + Math.max(p, q));
+    if (!cands) return null;
+    const mids = cands.map((e) => [
+      (verts[e.i][0] + verts[e.j][0]) / 2,
+      (verts[e.i][1] + verts[e.j][1]) / 2,
+      (verts[e.i][2] + verts[e.j][2]) / 2,
+    ]);
+    const c = mids.reduce((s, m) => [s[0] + m[0], s[1] + m[1], s[2] + m[2]], [0, 0, 0])
+      .map((v) => v / mids.length);
+    let best = 0, bd = where === "mid" ? Infinity : -Infinity;
+    mids.forEach((m, k) => {
+      const d = dist3(m, c);
+      if (where === "mid" ? d < bd : d > bd) { bd = d; best = k; }
+    });
+    return cands[best];
+  }
+
+  // Build the spanning tree for one piece (a group of patches), walking
+  // patches breadth- or depth-first, then flooding each patch from its
+  // entry face. Returns tree children lists plus the piece's root face.
+  function buildTree(group, order, where) {
+    const children = new Map();
+    const kid = (p, f, i, j) => {
+      if (!children.has(p)) children.set(p, []);
+      children.get(p).push({ face: f, i, j });
+    };
+    const inGroup = new Set(group);
+    const rootFace = patchFaces[group[0]][Math.floor(patchFaces[group[0]].length / 2)];
+    const entry = new Map([[group[0], rootFace]]);
+    const seen = new Set([group[0]]);
+    const walk = [group[0]];
+    while (walk.length) {
+      const p = order === "dfs" ? walk.pop() : walk.shift();
+      for (const q of group) {
+        if (seen.has(q)) continue;
+        const e = connector(p, q, where);
+        if (!e) continue;
+        const pf = faceBase[e.faces[0]] === p ? e.faces[0] : e.faces[1];
+        const cf = e.faces[0] === pf ? e.faces[1] : e.faces[0];
+        kid(pf, cf, e.i, e.j);
+        entry.set(q, cf);
+        seen.add(q);
+        walk.push(q);
+      }
+    }
+    // Flood each patch from its entry face.
+    for (const p of group) {
+      const start = entry.get(p);
+      const vis = new Set([start]);
+      const q2 = [start];
+      while (q2.length) {
+        const f = q2.shift();
+        for (const a of adj[f]) {
+          if (faceBase[a.nbr] !== p || vis.has(a.nbr)) continue;
+          vis.add(a.nbr);
+          kid(f, a.nbr, a.i, a.j);
+          q2.push(a.nbr);
+        }
+      }
+    }
+    return { rootFace, children };
+  }
+
+  // Rigid placement helpers.
+  function rootCoords(f) {
+    const [a, b, c] = faces[f];
+    const lab = dist3(verts[a], verts[b]);
+    const lac = dist3(verts[a], verts[c]), lbc = dist3(verts[b], verts[c]);
+    const x = (lac * lac - lbc * lbc + lab * lab) / (2 * lab);
+    return [[0, 0], [lab, 0], [x, Math.sqrt(Math.max(0, lac * lac - x * x))]];
+  }
+  function childCoords(face2d, cf, pf, ei, ej) {
+    const pv = faces[pf], p2 = face2d[pf];
+    const at = (v) => p2[pv.indexOf(v)];
+    const Pi = at(ei), Pj = at(ej);
+    const Pk = at(pv.find((v) => v !== ei && v !== ej));
+    const cv = faces[cf];
+    const m = cv.find((v) => v !== ei && v !== ej);
+    const di = dist3(verts[m], verts[ei]), dj = dist3(verts[m], verts[ej]);
+    const dx = Pj[0] - Pi[0], dy = Pj[1] - Pi[1];
+    const L = Math.hypot(dx, dy);
+    const ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+    const t = (di * di - dj * dj + L * L) / (2 * L);
+    const h = Math.sqrt(Math.max(0, di * di - t * t));
+    const s = ((Pk[0] - Pi[0]) * nx + (Pk[1] - Pi[1]) * ny) > 0 ? -1 : 1;
+    const M = [Pi[0] + ux * t + nx * h * s, Pi[1] + uy * t + ny * h * s];
+    return cv.map((v) => v === ei ? Pi : v === ej ? Pj : M);
+  }
+
+  // Pack pieces, apply offsets, classify fold vs cut edges.
+  function assembleNet(face2d, pieceOf, treePairs, nPieces) {
+    const bounds = Array.from({ length: nPieces }, () =>
+      ({ x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 }));
+    face2d.forEach((pts, fi) => {
+      const B = bounds[pieceOf[fi]];
+      for (const [px, py] of pts) {
+        B.x0 = Math.min(B.x0, px); B.y0 = Math.min(B.y0, py);
+        B.x1 = Math.max(B.x1, px); B.y1 = Math.max(B.y1, py);
+      }
+    });
+    const gap = 0.06;
+    const cols = Math.ceil(Math.sqrt(nPieces));
+    const cw = Math.max(...bounds.map((b) => b.x1 - b.x0)) + gap;
+    const chh = Math.max(...bounds.map((b) => b.y1 - b.y0)) + gap;
+    const offs = bounds.map((b, gi) => [
+      (gi % cols) * cw - b.x0, Math.floor(gi / cols) * chh - b.y0,
+    ]);
+    const polys = face2d.map((pts, fi) =>
+      pts.map(([px, py]) => [px + offs[pieceOf[fi]][0], py + offs[pieceOf[fi]][1]]));
+    const folds = [], cuts = [];
+    for (const e of g.edgeList) {
+      const [f1, f2] = e.faces;
+      const seg = (f) => {
+        const fv = faces[f];
+        const a = polys[f][fv.indexOf(e.i)], b = polys[f][fv.indexOf(e.j)];
+        return [a[0], a[1], b[0], b[1]];
+      };
+      if (treePairs.has(Math.min(f1, f2) + "_" + Math.max(f1, f2))) folds.push(seg(f1));
+      else { cuts.push(seg(f1)); cuts.push(seg(f2)); }
+    }
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const p of polys) for (const [px, py] of p) {
+      x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+      x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+    }
+    return { polys, folds, cuts, pieces: nPieces, bbox: { x0, y0, x1, y1 } };
+  }
+
+  // Unfold pre-planned patch groups following the tree.
+  function unfoldPieces(groups, order, where) {
+    const face2d = new Array(F);
+    const treePairs = new Set();
+    const pieceOf = new Array(F);
+    groups.forEach((group, gi) => {
+      const { rootFace, children } = buildTree(group, order, where);
+      face2d[rootFace] = rootCoords(rootFace);
+      const queue = [rootFace];
+      while (queue.length) {
+        const pf = queue.shift();
+        pieceOf[pf] = gi;
+        for (const ch of children.get(pf) ?? []) {
+          treePairs.add(Math.min(pf, ch.face) + "_" + Math.max(pf, ch.face));
+          face2d[ch.face] = childCoords(face2d, ch.face, pf, ch.i, ch.j);
+          queue.push(ch.face);
+        }
+      }
+    });
+    return assembleNet(face2d, pieceOf, treePairs, groups.length);
+  }
+
+  // Greedy collision-tested growth: attach faces breadth-first, but only
+  // when the new triangle doesn't overlap the piece so far; whatever can't
+  // fit anywhere starts the next piece. Non-overlapping by construction.
+  function greedyNet() {
+    const face2d = new Array(F);
+    const pieceOf = new Array(F);
+    const treePairs = new Set();
+    const CELL = 0.6;
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const segX = (a, b, c, d) =>
+      cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
+    const inTri = (p, t) => {
+      const s1 = cross(t[0], t[1], p), s2 = cross(t[1], t[2], p), s3 = cross(t[2], t[0], p);
+      return (s1 > 0 && s2 > 0 && s3 > 0) || (s1 < 0 && s2 < 0 && s3 < 0);
+    };
+    const shrunk = (p) => {
+      const cx = (p[0][0] + p[1][0] + p[2][0]) / 3, cy = (p[0][1] + p[1][1] + p[2][1]) / 3;
+      return p.map(([x, y]) => [cx + (x - cx) * 0.97, cy + (y - cy) * 0.97]);
+    };
+    let grid = new Map();
+    const cellsOf = (p) => {
+      const xs = p.map((q) => q[0]), ys = p.map((q) => q[1]);
+      const out = [];
+      for (let gx = Math.floor(Math.min(...xs) / CELL); gx <= Math.floor(Math.max(...xs) / CELL); gx++) {
+        for (let gy = Math.floor(Math.min(...ys) / CELL); gy <= Math.floor(Math.max(...ys) / CELL); gy++) {
+          out.push(gx + ":" + gy);
+        }
+      }
+      return out;
+    };
+    function collides(p) {
+      const A = shrunk(p);
+      const seen = new Set();
+      for (const key of cellsOf(p)) {
+        for (const fi of grid.get(key) ?? []) {
+          if (seen.has(fi)) continue;
+          seen.add(fi);
+          const B = shrunk(face2d[fi]);
+          let hit = inTri(A[0], B) || inTri(B[0], A);
+          for (let a = 0; a < 3 && !hit; a++) {
+            for (let b = 0; b < 3 && !hit; b++) {
+              hit = segX(A[a], A[(a + 1) % 3], B[b], B[(b + 1) % 3]);
+            }
+          }
+          if (hit) return true;
+        }
+      }
+      return false;
+    }
+    function put(fi, coords, piece) {
+      face2d[fi] = coords;
+      pieceOf[fi] = piece;
+      for (const key of cellsOf(coords)) {
+        if (!grid.has(key)) grid.set(key, []);
+        grid.get(key).push(fi);
+      }
+    }
+    const placed = new Array(F).fill(false);
+    let remaining = F, piece = -1;
+    while (remaining > 0) {
+      piece++;
+      grid = new Map();
+      const seed = placed.indexOf(false);
+      put(seed, rootCoords(seed), piece);
+      placed[seed] = true;
+      remaining--;
+      const queue = adj[seed].map((a) => ({ face: a.nbr, parent: seed, i: a.i, j: a.j }));
+      let progress = true;
+      while (progress) {
+        while (queue.length) {
+          const c = queue.shift();
+          if (placed[c.face]) continue;
+          const coords = childCoords(face2d, c.face, c.parent, c.i, c.j);
+          if (collides(coords)) continue;
+          put(c.face, coords, piece);
+          placed[c.face] = true;
+          remaining--;
+          treePairs.add(Math.min(c.parent, c.face) + "_" + Math.max(c.parent, c.face));
+          for (const a of adj[c.face]) {
+            if (!placed[a.nbr]) queue.push({ face: a.nbr, parent: c.face, i: a.i, j: a.j });
+          }
+        }
+        // Retry frontier faces through any placed neighbor in this piece.
+        progress = false;
+        for (let f = 0; f < F && !progress; f++) {
+          if (placed[f]) continue;
+          for (const a of adj[f]) {
+            if (!placed[a.nbr] || pieceOf[a.nbr] !== piece) continue;
+            const coords = childCoords(face2d, f, a.nbr, a.i, a.j);
+            if (collides(coords)) continue;
+            put(f, coords, piece);
+            placed[f] = true;
+            remaining--;
+            treePairs.add(Math.min(a.nbr, f) + "_" + Math.max(a.nbr, f));
+            for (const n of adj[f]) {
+              if (!placed[n.nbr]) queue.push({ face: n.nbr, parent: f, i: n.i, j: n.j });
+            }
+            progress = true;
+            break;
+          }
+        }
+      }
+    }
+    return assembleNet(face2d, pieceOf, treePairs, piece + 1);
+  }
+
+  // Greedy BFS clustering of patches into connected groups of ≤ size.
+  function clusterPatches(size) {
+    const assigned = new Set(), groups = [];
+    for (let p = 0; p < nPatch; p++) {
+      if (assigned.has(p)) continue;
+      const group = [p];
+      assigned.add(p);
+      const q = [p];
+      while (q.length && group.length < size) {
+        const cur = q.shift();
+        for (let n = 0; n < nPatch && group.length < size; n++) {
+          if (assigned.has(n) || !connector(cur, n)) continue;
+          group.push(n); assigned.add(n); q.push(n);
+        }
+      }
+      groups.push(group);
+    }
+    return groups;
+  }
+
+  // Prefer the classic patch-tree layouts (nicest nets) when they don't
+  // self-overlap; otherwise fall back to greedy collision-tested growth,
+  // which is non-overlapping by construction.
+  if (force) {
+    return force === "greedy" ? greedyNet()
+      : unfoldPieces(clusterPatches(force[0] ?? nPatch), force[1], force[2]);
+  }
+  for (const [order, where] of [["dfs", "mid"], ["dfs", "end"], ["bfs", "mid"], ["bfs", "end"]]) {
+    const net = unfoldPieces(clusterPatches(nPatch), order, where);
+    if (!netOverlaps(net.polys)) return net;
+  }
+  return greedyNet();
+}
+
+// Overlap test on slightly shrunken triangles (so shared edges and closed
+// slits don't count), with a sweep prefilter on x.
+function netOverlaps(polys) {
+  const tris = polys.map((p) => {
+    const cx = (p[0][0] + p[1][0] + p[2][0]) / 3, cy = (p[0][1] + p[1][1] + p[2][1]) / 3;
+    const t = p.map(([x, y]) => [cx + (x - cx) * 0.97, cy + (y - cy) * 0.97]);
+    t.x0 = Math.min(t[0][0], t[1][0], t[2][0]); t.x1 = Math.max(t[0][0], t[1][0], t[2][0]);
+    t.y0 = Math.min(t[0][1], t[1][1], t[2][1]); t.y1 = Math.max(t[0][1], t[1][1], t[2][1]);
+    return t;
+  }).sort((a, b) => a.x0 - b.x0);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const segX = (a, b, c, d) =>
+    cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
+  const inTri = (p, t) => {
+    const s1 = cross(t[0], t[1], p), s2 = cross(t[1], t[2], p), s3 = cross(t[2], t[0], p);
+    return (s1 > 0 && s2 > 0 && s3 > 0) || (s1 < 0 && s2 < 0 && s3 < 0);
+  };
+  for (let i = 0; i < tris.length; i++) {
+    const A = tris[i];
+    for (let j = i + 1; j < tris.length && tris[j].x0 <= A.x1; j++) {
+      const B = tris[j];
+      if (B.y0 > A.y1 || B.y1 < A.y0) continue;
+      let hit = inTri(A[0], B) || inTri(B[0], A);
+      for (let a = 0; a < 3 && !hit; a++) {
+        for (let b = 0; b < 3 && !hit; b++) {
+          hit = segX(A[a], A[(a + 1) % 3], B[b], B[(b + 1) % 3]);
+        }
+      }
+      if (hit) return true;
+    }
+  }
+  return false;
+}
+
+// The flat cube unfolds to the classic cross of 6 squares.
+function flatCubeNet() {
+  const s = 2 / Math.sqrt(3);
+  const cells = [[1, 0], [0, 1], [1, 1], [2, 1], [3, 1], [1, 2]];
+  const has = new Set(cells.map(([c, r]) => c + "," + r));
+  const polys = cells.map(([c, r]) => [
+    [c * s, r * s], [(c + 1) * s, r * s], [(c + 1) * s, (r + 1) * s], [c * s, (r + 1) * s],
+  ]);
+  const folds = [], cuts = [], seen = new Set();
+  for (const [c, r] of cells) {
+    const sides = [
+      [c, r, c + 1, r, c, r - 1], [c + 1, r, c + 1, r + 1, c + 1, r],
+      [c + 1, r + 1, c, r + 1, c, r + 1], [c, r + 1, c, r, c - 1, r],
+    ];
+    for (const [ax, ay, bx, by, nc, nr] of sides) {
+      const key = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)].join(",");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      (has.has(nc + "," + nr) ? folds : cuts)
+        .push([ax * s, ay * s, bx * s, by * s]);
+    }
+  }
+  return { polys, folds, cuts, pieces: 1,
+           bbox: { x0: 0, y0: 0, x1: 4 * s, y1: 3 * s } };
+}
+
+const paperCache = new Map();
+function paperNet(base, subdiv) {
+  const key = base + "/" + subdiv;
+  if (!paperCache.has(key)) paperCache.set(key, computePaperNet(base, subdiv));
+  return paperCache.get(key);
+}
+
+// SVG cut file: red = cut, dashed blue = fold (score). Coordinates are the
+// model's length units rendered as millimetres.
+function paperSVG(net, R, title) {
+  const f = (v) => +(v * R).toFixed(3);
+  const m = 0.03 * Math.max(net.bbox.x1 - net.bbox.x0, net.bbox.y1 - net.bbox.y0) * R;
+  const x0 = f(net.bbox.x0) - m, y0 = f(net.bbox.y0) - m;
+  const w = f(net.bbox.x1) - f(net.bbox.x0) + 2 * m;
+  const h = f(net.bbox.y1) - f(net.bbox.y0) + 2 * m;
+  const path = (segs) =>
+    segs.map((s) => `M${f(s[0])} ${f(s[1])}L${f(s[2])} ${f(s[3])}`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${w} ${h}" ` +
+    `width="${w.toFixed(2)}mm" height="${h.toFixed(2)}mm">\n` +
+    `<desc>${title} — MiterPal paper net. Solid red = cut, dashed blue = fold.</desc>\n` +
+    `<path d="${path(net.folds)}" fill="none" stroke="#1565c0" ` +
+    `stroke-width="0.25" stroke-dasharray="1.5 1.5"/>\n` +
+    `<path d="${path(net.cuts)}" fill="none" stroke="#d32f2f" stroke-width="0.25"/>\n` +
+    `</svg>\n`;
+}
+
 function result(n, sideAngle, dihedral, bladeTilt, miter, feasible = true) {
   return {
     n, sideAngle, dihedral, bladeTilt, miter, feasible,
@@ -690,6 +1119,7 @@ const els = {
   angleLabel: $("angleLabel"), angleHint: $("angleHint"),
   geoBaseCard: $("geoBaseCard"), geoBase: $("geoBase"),
   geoCard: $("geoCard"), geoTable: $("geoTable"), geoHint: $("geoHint"),
+  geoSvgBtn: $("geoSvgBtn"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -771,7 +1201,9 @@ const GEO_BASE_LABELS = {
 
 function renderGeodesic() {
   const strut = state.geoCon === "strut";
+  const paper = state.geoCon === "paper";
   const g = geodesic(state.geoBase, state.geoSubdiv);
+  const net = paper ? paperNet(state.geoBase, state.geoSubdiv) : null;
 
   els.geoBase.value = state.geoBase;
   document.querySelectorAll("#geoConSeg button").forEach((b) =>
@@ -791,24 +1223,36 @@ function renderGeodesic() {
     els.sValue.value = fmtInput(state.geoRadius);
   }
 
-  els.results.innerHTML = strut
-    ? card(g.e, "Struts") + card(g.v, "Hubs")
-    : card(g.f, "Panels") + card(g.e, "Glue edges");
+  els.results.innerHTML = paper
+    ? card(g.f, "Panels") + card(net.pieces, net.pieces > 1 ? "Pieces" : "One piece")
+    : strut
+      ? card(g.e, "Struts") + card(g.v, "Hubs")
+      : card(g.f, "Panels") + card(g.e, "Glue edges");
   els.leanBanner.hidden = true;
   els.advanced.hidden = true;
+  els.geoSvgBtn.hidden = !paper;
 
   // Cut list table: one row per edge class.
   const R = state.geoRadius;
-  const head = strut
-    ? `<tr><th>Strut</th><th>Qty</th><th>Length</th><th>End cut</th></tr>`
-    : `<tr><th>Edge</th><th>Qty</th><th>Length</th><th>Edge bevel</th></tr>`;
-  els.geoTable.innerHTML = head + g.classes.map((c) =>
-    `<tr><td>${c.label}</td><td>${c.count}</td>` +
-    `<td>${formatLen(c.chord * R, state.exact)}</td>` +
-    `<td>${formatAngle(strut ? c.endCut : c.bevel, state.exact)}</td>` +
-    `</tr>`).join("");
+  const angleCol = paper ? null : strut ? "End cut" : "Edge bevel";
+  els.geoTable.innerHTML =
+    `<tr><th>${strut ? "Strut" : "Edge"}</th><th>Qty</th><th>Length</th>` +
+    (angleCol ? `<th>${angleCol}</th>` : "") + `</tr>` +
+    g.classes.map((c) =>
+      `<tr><td>${c.label}</td><td>${c.count}</td>` +
+      `<td>${formatLen(c.chord * R, state.exact)}</td>` +
+      (angleCol ? `<td>${formatAngle(strut ? c.endCut : c.bevel, state.exact)}</td>` : "") +
+      `</tr>`).join("");
 
-  els.geoHint.innerHTML = strut
+  els.geoHint.innerHTML = paper
+    ? `Zero-thickness paper net${net.pieces > 1
+        ? ` in ${net.pieces} pieces (a single sheet would overlap itself)`
+        : " in one connected piece"}: solid lines are cuts, dashed lines are ` +
+      "folds (score them). The slits between triangles close up as the " +
+      "sphere rounds out. The SVG downloads sized in millimetres — with " +
+      `R = ${fmtInput(state.geoRadius)}, that's a ${fmtInput(state.geoRadius)} mm ` +
+      "radius; rescale in your cutter software if you used other units."
+    : strut
     ? "Lengths are hub-center to hub-center — subtract your hub fitting's " +
       "reach at each end. End cut is how far off square to cut both strut " +
       "ends so they aim at the sphere center. Hubs: " +
@@ -827,8 +1271,34 @@ function renderGeodesic() {
   els.topCaption.textContent =
     `${GEO_BASE_LABELS[state.geoBase]} · ` +
     (state.geoSubdiv === 0 ? "no subdivision"
-      : `${state.geoSubdiv} subdivision${state.geoSubdiv > 1 ? "s" : ""}`);
-  drawGeoView(g);
+      : `${state.geoSubdiv} subdivision${state.geoSubdiv > 1 ? "s" : ""}`) +
+    (paper ? " — unfolded net" : "");
+  if (paper) drawNetView(net);
+  else drawGeoView(g);
+}
+
+function drawNetView(net) {
+  const [ctx, w, h] = setupCanvas(els.topView);
+  const bw = net.bbox.x1 - net.bbox.x0, bh = net.bbox.y1 - net.bbox.y0;
+  const sc = Math.min(w * 0.96 / bw, h * 0.94 / bh);
+  const ox = (w - bw * sc) / 2 - net.bbox.x0 * sc;
+  const oy = (h - bh * sc) / 2 - net.bbox.y0 * sc;
+  const draw = (segs) => {
+    ctx.beginPath();
+    for (const [x1, y1, x2, y2] of segs) {
+      ctx.moveTo(x1 * sc + ox, y1 * sc + oy);
+      ctx.lineTo(x2 * sc + ox, y2 * sc + oy);
+    }
+    ctx.stroke();
+  };
+  ctx.strokeStyle = cssVar("--outline");
+  ctx.lineWidth = 0.7;
+  ctx.setLineDash([3, 3]);
+  draw(net.folds);
+  ctx.setLineDash([]);
+  ctx.strokeStyle = cssVar("--primary");
+  ctx.lineWidth = 1.2;
+  draw(net.cuts);
 }
 
 function drawGeoView(g) {
@@ -967,6 +1437,21 @@ els.geoBase.addEventListener("change", () => { state.geoBase = els.geoBase.value
 document.querySelectorAll("#geoConSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.geoCon = b.dataset.v; render(); }));
 
+els.geoSvgBtn.addEventListener("click", () => {
+  const net = paperNet(state.geoBase, state.geoSubdiv);
+  const title = `${GEO_BASE_LABELS[state.geoBase]}, ${state.geoSubdiv} ` +
+    `subdivision${state.geoSubdiv === 1 ? "" : "s"}, R=${state.geoRadius}`;
+  const blob = new Blob([paperSVG(net, state.geoRadius, title)],
+    { type: "image/svg+xml" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `miterpal-${state.geoBase}-${state.geoSubdiv}subdiv` +
+    `-R${state.geoRadius}-net.svg`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast("SVG net downloaded");
+});
+
 // The angle card edits S in the box modes, B in Fixed Bevel Bit mode, and
 // the sphere radius in Geodesic Sphere mode.
 function setAngle(v) {
@@ -1052,7 +1537,7 @@ function renderProjects() {
       state.geoBase = GEO_BASE_LABELS[p.geoBase] ? p.geoBase : "icosahedron";
       state.geoSubdiv = clamp(p.geoSubdiv ?? 1, 0, GEO_MAX_SUBDIV);
       state.geoRadius = clamp(p.geoRadius ?? 12, 0, 1e6);
-      state.geoCon = p.geoCon === "strut" ? "strut" : "panel";
+      state.geoCon = ["strut", "paper"].includes(p.geoCon) ? p.geoCon : "panel";
       dlgProjects.close();
       render();
     });
@@ -1116,7 +1601,7 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 // Expose the math for testing (node --experimental-default-type=module not
 // needed; tests read this file and eval the script block).
 if (typeof module !== "undefined") {
-  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide };
+  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG };
 }
 </script>
 </body>
