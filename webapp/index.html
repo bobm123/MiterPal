@@ -178,14 +178,11 @@
   .geo-table td { text-align: right; padding: 5px 6px; font-variant-numeric: tabular-nums; }
   .geo-table th:first-child, .geo-table td:first-child { text-align: left; }
   .geo-table td:first-child { font-weight: 600; color: var(--primary); }
-  #geoSvgBtn, #geoModBtn {
-    display: block; margin: 12px auto 4px; border: none; border-radius: 20px;
+  .scope-row { display: flex; justify-content: center; margin-top: 12px; }
+  #geoSvgBtn {
+    display: block; margin: 10px auto 4px; border: none; border-radius: 20px;
     padding: 10px 20px; font-size: 15px; font-weight: 500; cursor: pointer;
     background: var(--primary); color: var(--on-primary);
-  }
-  #geoModBtn {
-    margin-top: 6px;
-    background: var(--primary-container); color: var(--on-primary-container);
   }
 
   .toast {
@@ -267,8 +264,13 @@
   <div class="card" id="geoCard" hidden>
     <table class="geo-table" id="geoTable"></table>
     <div class="hint" id="geoHint"></div>
-    <button id="geoSvgBtn" hidden>Download SVG — whole model</button>
-    <button id="geoModBtn" hidden>Download SVG — one module</button>
+    <div class="scope-row" id="geoScopeRow" hidden>
+      <div class="seg" id="geoScopeSeg">
+        <button data-v="model">Whole model</button>
+        <button data-v="module">One module</button>
+      </div>
+    </div>
+    <button id="geoSvgBtn" hidden>Download SVG</button>
   </div>
 
   <div class="card">
@@ -1055,8 +1057,10 @@ function paperNet(base, subdiv, module) {
 // How many copies of the repeating module build the whole sphere.
 const GEO_MODULE_COUNT = { tetrahedron: 4, cube: 6, octahedron: 8, icosahedron: 20 };
 
-// SVG cut file: red = cut, dashed blue = fold (score). Coordinates are the
-// model's length units rendered as millimetres.
+// SVG cut file: red = cut, dashed blue = fold (score). Cuts and folds sit
+// on separate named layers (Inkscape layer convention, which most cutter
+// software imports as selectable layers). Coordinates are the model's
+// length units rendered as millimetres.
 function paperSVG(net, R, title) {
   const f = (v) => +(v * R).toFixed(3);
   const m = 0.03 * Math.max(net.bbox.x1 - net.bbox.x0, net.bbox.y1 - net.bbox.y0) * R;
@@ -1065,12 +1069,19 @@ function paperSVG(net, R, title) {
   const h = f(net.bbox.y1) - f(net.bbox.y0) + 2 * m;
   const path = (segs) =>
     segs.map((s) => `M${f(s[0])} ${f(s[1])}L${f(s[2])} ${f(s[3])}`).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${w} ${h}" ` +
+  return `<svg xmlns="http://www.w3.org/2000/svg" ` +
+    `xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ` +
+    `viewBox="${x0} ${y0} ${w} ${h}" ` +
     `width="${w.toFixed(2)}mm" height="${h.toFixed(2)}mm">\n` +
-    `<desc>${title} — MiterPal paper net. Solid red = cut, dashed blue = fold.</desc>\n` +
+    `<desc>${title} — MiterPal paper net. Layer "cuts" (solid red) = cut, ` +
+    `layer "scores" (dashed blue) = fold/score.</desc>\n` +
+    `<g id="scores" inkscape:groupmode="layer" inkscape:label="scores">\n` +
     `<path d="${path(net.folds)}" fill="none" stroke="#1565c0" ` +
     `stroke-width="0.25" stroke-dasharray="1.5 1.5"/>\n` +
+    `</g>\n` +
+    `<g id="cuts" inkscape:groupmode="layer" inkscape:label="cuts">\n` +
     `<path d="${path(net.cuts)}" fill="none" stroke="#d32f2f" stroke-width="0.25"/>\n` +
+    `</g>\n` +
     `</svg>\n`;
 }
 
@@ -1123,6 +1134,7 @@ const state = {
   geoSubdiv: 1,
   geoRadius: 12,
   geoCon: "panel",
+  geoScope: "model",   // paper preview/download: whole model or one module
   ...store.load("miterpal.settings", {}),   // advanced, exact, theme
   advanced: store.load("miterpal.settings", {}).advanced ?? false,
   exact: store.load("miterpal.settings", {}).exact ?? false,
@@ -1145,7 +1157,7 @@ const els = {
   angleLabel: $("angleLabel"), angleHint: $("angleHint"),
   geoBaseCard: $("geoBaseCard"), geoBase: $("geoBase"),
   geoCard: $("geoCard"), geoTable: $("geoTable"), geoHint: $("geoHint"),
-  geoSvgBtn: $("geoSvgBtn"), geoModBtn: $("geoModBtn"),
+  geoSvgBtn: $("geoSvgBtn"), geoScopeRow: $("geoScopeRow"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -1228,8 +1240,10 @@ const GEO_BASE_LABELS = {
 function renderGeodesic() {
   const strut = state.geoCon === "strut";
   const paper = state.geoCon === "paper";
+  const module = paper && state.geoScope === "module";
   const g = geodesic(state.geoBase, state.geoSubdiv);
-  const net = paper ? paperNet(state.geoBase, state.geoSubdiv) : null;
+  const net = paper ? paperNet(state.geoBase, state.geoSubdiv, module) : null;
+  const copies = GEO_MODULE_COUNT[state.geoBase];
 
   els.geoBase.value = state.geoBase;
   document.querySelectorAll("#geoConSeg button").forEach((b) =>
@@ -1250,16 +1264,21 @@ function renderGeodesic() {
   }
 
   els.results.innerHTML = paper
-    ? card(g.f, "Panels") + card(net.pieces, net.pieces > 1 ? "Pieces" : "One piece")
+    ? (module
+        ? card(copies, "Modules") + card(g.f / copies, "Panels each")
+        : card(g.f, "Panels") + card(net.pieces, net.pieces > 1 ? "Pieces" : "One piece"))
     : strut
       ? card(g.e, "Struts") + card(g.v, "Hubs")
       : card(g.f, "Panels") + card(g.e, "Glue edges");
   els.leanBanner.hidden = true;
   els.advanced.hidden = true;
   els.geoSvgBtn.hidden = !paper;
-  els.geoModBtn.hidden = !paper;
-  els.geoModBtn.textContent =
-    `Download SVG — one module (cut ${GEO_MODULE_COUNT[state.geoBase]})`;
+  els.geoScopeRow.hidden = !paper;
+  document.querySelectorAll("#geoScopeSeg button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.v === state.geoScope));
+  els.geoSvgBtn.textContent = module
+    ? `Download SVG — one module (cut ${copies})`
+    : "Download SVG — whole model";
 
   // Cut list table: one row per edge class.
   const R = state.geoRadius;
@@ -1274,13 +1293,15 @@ function renderGeodesic() {
       `</tr>`).join("");
 
   els.geoHint.innerHTML = paper
-    ? `Zero-thickness paper net${net.pieces > 1
-        ? ` in ${net.pieces} pieces (a single sheet would overlap itself)`
-        : " in one connected piece"}: solid lines are cuts, dashed lines are ` +
-      "folds (score them). The slits between triangles close up as the " +
-      "sphere rounds out. Download the whole model, or one repeating module " +
-      `(a single base face — cut ${GEO_MODULE_COUNT[state.geoBase]} copies ` +
-      "and join them at the cut edges). SVGs are sized in millimetres — with " +
+    ? (module
+        ? `One repeating module — a single base face's panels, connected. ` +
+          `Cut ${copies} copies and join them at the cut edges to build the sphere. `
+        : `Zero-thickness paper net${net.pieces > 1
+            ? ` in ${net.pieces} pieces (a single sheet would overlap itself)`
+            : " in one connected piece"}. `) +
+      "Solid lines are cuts, dashed lines are folds; the slits close up as " +
+      "the sphere rounds out. The SVG has separate “cuts” and " +
+      "“scores” layers, sized in millimetres — with " +
       `R = ${fmtInput(state.geoRadius)}, that's a ${fmtInput(state.geoRadius)} mm ` +
       "radius; rescale in your cutter software if you used other units."
     : strut
@@ -1303,7 +1324,7 @@ function renderGeodesic() {
     `${GEO_BASE_LABELS[state.geoBase]} · ` +
     (state.geoSubdiv === 0 ? "no subdivision"
       : `${state.geoSubdiv} subdivision${state.geoSubdiv > 1 ? "s" : ""}`) +
-    (paper ? " — unfolded net" : "");
+    (paper ? (module ? " — one module, unfolded" : " — unfolded net") : "");
   if (paper) drawNetView(net);
   else drawGeoView(g);
 }
@@ -1468,7 +1489,11 @@ els.geoBase.addEventListener("change", () => { state.geoBase = els.geoBase.value
 document.querySelectorAll("#geoConSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.geoCon = b.dataset.v; render(); }));
 
-function downloadPaperSVG(module) {
+document.querySelectorAll("#geoScopeSeg button").forEach((b) =>
+  b.addEventListener("click", () => { state.geoScope = b.dataset.v; render(); }));
+
+els.geoSvgBtn.addEventListener("click", () => {
+  const module = state.geoScope === "module";
   const net = paperNet(state.geoBase, state.geoSubdiv, module);
   const copies = GEO_MODULE_COUNT[state.geoBase];
   const title = `${GEO_BASE_LABELS[state.geoBase]}, ${state.geoSubdiv} ` +
@@ -1483,9 +1508,7 @@ function downloadPaperSVG(module) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   toast(module ? `Module SVG downloaded — cut ${copies} copies` : "SVG net downloaded");
-}
-els.geoSvgBtn.addEventListener("click", () => downloadPaperSVG(false));
-els.geoModBtn.addEventListener("click", () => downloadPaperSVG(true));
+});
 
 // The angle card edits S in the box modes, B in Fixed Bevel Bit mode, and
 // the sphere radius in Geodesic Sphere mode.
@@ -1531,7 +1554,7 @@ $("saveOk").addEventListener("click", () => {
   state.projects.push({ name, n: state.n, sideAngle: state.sideAngle,
     mode: state.mode, bitAngle: state.bitAngle,
     geoBase: state.geoBase, geoSubdiv: state.geoSubdiv,
-    geoRadius: state.geoRadius, geoCon: state.geoCon });
+    geoRadius: state.geoRadius, geoCon: state.geoCon, geoScope: state.geoScope });
   persistProjects();
   dlgSave.close();
   toast(`Saved "${name}"`);
@@ -1573,6 +1596,7 @@ function renderProjects() {
       state.geoSubdiv = clamp(p.geoSubdiv ?? 1, 0, GEO_MAX_SUBDIV);
       state.geoRadius = clamp(p.geoRadius ?? 12, 0, 1e6);
       state.geoCon = ["strut", "paper"].includes(p.geoCon) ? p.geoCon : "panel";
+      state.geoScope = p.geoScope === "module" ? "module" : "model";
       dlgProjects.close();
       render();
     });
