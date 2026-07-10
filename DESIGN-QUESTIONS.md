@@ -30,6 +30,16 @@ we'll refine these live.
 - Imperial/metric anywhere relevant (e.g. board dimensions), or angles only?
 - Offline-only (no accounts/network)? Almost certainly yes — confirm.
 
+## Geodesic sphere mode — future work
+- **Hub-and-strut construction**: strut lengths are already shown; still to
+  do are the end-cut angles (axial angle at each strut end so the end faces
+  aim at the sphere center) and hub geometry (how many struts meet, at what
+  face angles).
+- **Paper cutting output**: a zero-thickness construction option — unfold
+  each panel type flat (bevels don't matter at paper thickness) and generate
+  an SVG cut file, with tabs for gluing, that can be sent to a CNC paper
+  cutter. Useful for scale models before committing lumber.
+
 ## Non-functional
 - App name/branding, icon, color scheme?
 - Accessibility (large type, VoiceOver)?
