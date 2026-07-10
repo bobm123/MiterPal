@@ -215,6 +215,7 @@
       <span class="label">Base solid</span>
       <select id="geoBase">
         <option value="tetrahedron">Tetrahedron</option>
+        <option value="cube">Cube</option>
         <option value="octahedron">Octahedron</option>
         <option value="icosahedron" selected>Icosahedron</option>
       </select>
@@ -398,6 +399,27 @@ function geoBaseMesh(name) {
       verts: [[s, s, s], [s, -s, -s], [-s, s, -s], [-s, -s, s]],
       faces: [[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]],
     };
+  }
+  if (name === "cube") {
+    // Square faces can't feed the triangle subdivider directly, so each face
+    // is pre-triangulated through its center, with the center vertex pushed
+    // out to the circumsphere (4 triangles per face, 24 total at subdiv 0).
+    const c = 1 / Math.sqrt(3);
+    const verts = [
+      [c, c, c], [c, c, -c], [c, -c, c], [c, -c, -c],       // corners 0-7
+      [-c, c, c], [-c, c, -c], [-c, -c, c], [-c, -c, -c],
+      [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0],         // face centers 8-13
+      [0, 0, 1], [0, 0, -1],
+    ];
+    const quads = [                     // [corner cycle..., center]
+      [0, 1, 3, 2, 8], [4, 6, 7, 5, 9], [0, 4, 5, 1, 10],
+      [2, 3, 7, 6, 11], [0, 2, 6, 4, 12], [1, 5, 7, 3, 13],
+    ];
+    const faces = [];
+    for (const [a, b, cq, d, m] of quads) {
+      faces.push([a, b, m], [b, cq, m], [cq, d, m], [d, a, m]);
+    }
+    return { verts, faces };
   }
   if (name === "octahedron") {
     return {
@@ -687,7 +709,8 @@ function render() {
 
 /* ---- Geodesic rendering --------------------------------------------------- */
 const GEO_BASE_LABELS = {
-  tetrahedron: "Tetrahedron", octahedron: "Octahedron", icosahedron: "Icosahedron",
+  tetrahedron: "Tetrahedron", cube: "Cube",
+  octahedron: "Octahedron", icosahedron: "Icosahedron",
 };
 
 function renderGeodesic() {
@@ -735,7 +758,11 @@ function renderGeodesic() {
     : `${g.f} panels in ${g.panels.length} shape${g.panels.length > 1 ? "s" : ""}: ` +
       g.panels.map((p) => `${p.count}× ${p.combo}`).join(", ") +
       ". Bevel is measured from square, on every panel edge — both mating " +
-      "panels get the same bevel.";
+      "panels get the same bevel." +
+      (state.geoBase === "cube"
+        ? " Square faces are pre-triangulated: a vertex is added at each " +
+          "face center (on the sphere), making 4 triangles per face."
+        : "");
 
   els.leanFigure.hidden = true;
   els.topCaption.textContent =
