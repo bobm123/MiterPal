@@ -33,6 +33,14 @@ Settled during the kickoff on 2026-06-22. Open items are at the bottom.
 - **First launch:** square box, N=4, S=10° (a real compound result out of the gate).
 - **Offline:** fully offline, no accounts, no network, nothing leaves the phone.
 
+## Platform pivot (2026-07)
+- **The web app (PWA) is the primary implementation.** It ships from GitHub
+  Pages, updates instantly, and carries features (Geodesic Sphere mode, SVG
+  paper nets) the Flutter port doesn't have.
+- **The Flutter port is deferred** to a future native release (iOS first,
+  Android later). The code stays in the repo (`lib/`, `windows/`, `test/`) —
+  see `lib/README.md`.
+
 ## Still open (decide later)
 - Minimum iOS version (Flutter default is fine to start).
 - App branding: name lock, icon, color scheme.
