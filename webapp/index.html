@@ -270,6 +270,10 @@
         <button data-v="module">One module</button>
       </div>
     </div>
+    <label class="check scope-row" id="geoTabsRow" hidden>
+      <input type="checkbox" id="geoTabsChk">
+      <span>Glue tabs on cut edges</span>
+    </label>
     <button id="geoSvgBtn" hidden>Download SVG</button>
   </div>
 
@@ -657,8 +661,9 @@ function computePaperNet(base, subdiv, force) {
   if (base === "cube" && subdiv === 0) {
     if (force !== "module") return flatCubeNet();
     const s = 2 / Math.sqrt(3);
-    return { polys: [[[0, 0], [s, 0], [s, s], [0, s]]], folds: [],
-             cuts: [[0, 0, s, 0], [s, 0, s, s], [s, s, 0, s], [0, s, 0, 0]],
+    const sq = [[0, 0, s, 0], [s, 0, s, s], [s, s, 0, s], [0, s, 0, 0]];
+    return { polys: [[[0, 0], [s, 0], [s, s], [0, s]]], folds: [], cuts: sq,
+             cutInfo: sq.map((seg) => ({ seg, face: 0, partner: -1 })),
              pieces: 1, bbox: { x0: 0, y0: 0, x1: s, y1: s } };
   }
   const g = geodesic(base, subdiv);
@@ -796,7 +801,9 @@ function computePaperNet(base, subdiv, force) {
     ]);
     const polys = face2d.map((pts, fi) =>
       pts.map(([px, py]) => [px + offs[pieceOf[fi]][0], py + offs[pieceOf[fi]][1]]));
-    const folds = [], cuts = [];
+    // cutInfo carries, per cut lip: its segment, owning face, and the index
+    // of its mating lip (-1 on piece boundaries) — the tab generator's input.
+    const folds = [], cuts = [], cutInfo = [];
     for (const e of g.edgeList) {
       const [f1, f2] = e.faces;
       const seg = (f) => {
@@ -807,8 +814,18 @@ function computePaperNet(base, subdiv, force) {
       // In module mode only one patch is placed; skip unplaced lips.
       if (treePairs.has(Math.min(f1, f2) + "_" + Math.max(f1, f2))) folds.push(seg(f1));
       else {
-        if (polys[f1]) cuts.push(seg(f1));
-        if (polys[f2]) cuts.push(seg(f2));
+        const i1 = polys[f1] ? cutInfo.length : -1;
+        if (polys[f1]) {
+          const s = seg(f1);
+          cuts.push(s);
+          cutInfo.push({ seg: s, face: f1, partner: -1 });
+        }
+        if (polys[f2]) {
+          const s = seg(f2);
+          cuts.push(s);
+          cutInfo.push({ seg: s, face: f2, partner: i1 });
+          if (i1 >= 0) cutInfo[i1].partner = cutInfo.length - 1;
+        }
       }
     }
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -819,7 +836,7 @@ function computePaperNet(base, subdiv, force) {
         x1 = Math.max(x1, px); y1 = Math.max(y1, py);
       }
     }
-    return { polys, folds, cuts, pieces: nPieces, bbox: { x0, y0, x1, y1 } };
+    return { polys, folds, cuts, cutInfo, pieces: nPieces, bbox: { x0, y0, x1, y1 } };
   }
 
   // Unfold pre-planned patch groups following the tree.
@@ -1027,8 +1044,8 @@ function flatCubeNet() {
   const polys = cells.map(([c, r]) => [
     [c * s, r * s], [(c + 1) * s, r * s], [(c + 1) * s, (r + 1) * s], [c * s, (r + 1) * s],
   ]);
-  const folds = [], cuts = [], seen = new Set();
-  for (const [c, r] of cells) {
+  const folds = [], cuts = [], cutInfo = [], seen = new Set();
+  cells.forEach(([c, r], ci) => {
     const sides = [
       [c, r, c + 1, r, c, r - 1], [c + 1, r, c + 1, r + 1, c + 1, r],
       [c + 1, r + 1, c, r + 1, c, r + 1], [c, r + 1, c, r, c - 1, r],
@@ -1037,19 +1054,182 @@ function flatCubeNet() {
       const key = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)].join(",");
       if (seen.has(key)) continue;
       seen.add(key);
-      (has.has(nc + "," + nr) ? folds : cuts)
-        .push([ax * s, ay * s, bx * s, by * s]);
+      const seg = [ax * s, ay * s, bx * s, by * s];
+      if (has.has(nc + "," + nr)) folds.push(seg);
+      else {
+        cuts.push(seg);
+        cutInfo.push({ seg, face: ci, partner: -1 });
+      }
     }
-  }
-  return { polys, folds, cuts, pieces: 1,
+  });
+  return { polys, folds, cuts, cutInfo, pieces: 1,
            bbox: { x0: 0, y0: 0, x1: 4 * s, y1: 3 * s } };
 }
 
+/* ---- Glue tabs -----------------------------------------------------------
+   Every cut edge in a net is a pair of lips (or a lone boundary lip in
+   module scope / the flat cube cross). A trapezoid tab goes on exactly one
+   lip of each pair: fold it under the mating panel when gluing, so the
+   tabbed lip's base line becomes a score and the tab outline becomes the
+   cut. Depth is collision-tested against the placed panels and the other
+   tabs — full depth, then 60%, then 35%, then the other lip, then give up
+   (the joint is still glueable edge-to-edge). Boundary lips have no partner
+   in the layout, so each carries a tab; when two module copies meet, both
+   bring one — trim one of the two if you prefer.                          */
+function applyTabs(net) {
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const segX = (a, b, c, d) =>
+    cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
+  const inPoly = (p, t) => {
+    let pos = 0, neg = 0;
+    for (let i = 0; i < t.length; i++) {
+      const s = cross(t[i], t[(i + 1) % t.length], p);
+      if (s > 0) pos++; else if (s < 0) neg++;
+    }
+    return !(pos && neg);
+  };
+  const shrink = (poly, k) => {
+    const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+    const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+    return poly.map(([x, y]) => [cx + (x - cx) * k, cy + (y - cy) * k]);
+  };
+  const bboxOf = (poly) => ({
+    x0: Math.min(...poly.map((p) => p[0])), x1: Math.max(...poly.map((p) => p[0])),
+    y0: Math.min(...poly.map((p) => p[1])), y1: Math.max(...poly.map((p) => p[1])),
+  });
+  const polyHit = (A, B) => {
+    if (inPoly(A[0], B) || inPoly(B[0], A)) return true;
+    for (let a = 0; a < A.length; a++) {
+      for (let b = 0; b < B.length; b++) {
+        if (segX(A[a], A[(a + 1) % A.length], B[b], B[(b + 1) % B.length])) return true;
+      }
+    }
+    return false;
+  };
+
+  const panels = net.polys.filter(Boolean);
+  const panelBoxes = panels.map(bboxOf);
+  // Tab depth scales with the shortest panel edge in the net.
+  let minEdge = Infinity;
+  for (const p of panels) {
+    for (let i = 0; i < p.length; i++) {
+      minEdge = Math.min(minEdge, Math.hypot(
+        p[i][0] - p[(i + 1) % p.length][0], p[i][1] - p[(i + 1) % p.length][1]));
+    }
+  }
+  const DEPTH = 0.38 * minEdge;
+
+  function makeTab(info, scale, t0 = 0, t1 = 1) {
+    const [sx1, sy1, sx2, sy2] = info.seg;
+    const x1 = sx1 + (sx2 - sx1) * t0, y1 = sy1 + (sy2 - sy1) * t0;
+    const x2 = sx1 + (sx2 - sx1) * t1, y2 = sy1 + (sy2 - sy1) * t1;
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const depth = Math.min(DEPTH * scale, 0.45 * len);
+    const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+    let nx = -uy, ny = ux;
+    // Point the tab away from the owning panel's interior.
+    const poly = net.polys[info.face];
+    const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+    const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+    if (((x1 + x2) / 2 - cx) * nx + ((y1 + y2) / 2 - cy) * ny < 0) {
+      nx = -nx; ny = -ny;
+    }
+    const inset = Math.min(depth * 0.577, 0.3 * len); // ~60° shoulders
+    return [
+      [x1, y1],
+      [x1 + nx * depth + ux * inset, y1 + ny * depth + uy * inset],
+      [x2 + nx * depth - ux * inset, y2 + ny * depth - uy * inset],
+      [x2, y2],
+    ];
+  }
+
+  const accepted = [], acceptedBoxes = [];
+  function collides(tab) {
+    const T = shrink(tab, 0.9);
+    const tb = bboxOf(T);
+    for (let i = 0; i < panels.length; i++) {
+      const b = panelBoxes[i];
+      if (tb.x0 > b.x1 || tb.x1 < b.x0 || tb.y0 > b.y1 || tb.y1 < b.y0) continue;
+      if (polyHit(T, shrink(panels[i], 0.995))) return true;
+    }
+    for (let i = 0; i < accepted.length; i++) {
+      const b = acceptedBoxes[i];
+      if (tb.x0 > b.x1 || tb.x1 < b.x0 || tb.y0 > b.y1 || tb.y1 < b.y0) continue;
+      if (polyHit(T, shrink(accepted[i].poly, 0.9))) return true;
+    }
+    return false;
+  }
+
+  const tabbed = new Map();
+  let joints = 0, skipped = 0;
+  net.cutInfo.forEach((info, idx) => {
+    // Handle each pair once (from its first lip); boundaries stand alone.
+    if (info.partner >= 0 && info.partner < idx) return;
+    joints++;
+    const lips = info.partner >= 0 ? [info, net.cutInfo[info.partner]] : [info];
+    // Full-length tabs first, then shallower, then partial-length tabs
+    // anchored at either end (slits are V-shaped: narrow at the hinge,
+    // wide at the far end — a half tab often fits where a full one can't).
+    const variants = [
+      [1, 0, 1], [0.6, 0, 1],
+      [0.6, 0, 0.55], [0.6, 0.45, 1],
+      [0.35, 0, 1], [0.35, 0, 0.55], [0.35, 0.45, 1],
+    ];
+    let placed = false;
+    outer:
+    for (const [scale, t0, t1] of variants) {
+      for (const lip of lips) {
+        const tab = makeTab(lip, scale, t0, t1);
+        if (!collides(tab)) {
+          accepted.push({ poly: tab, lip, t0, t1 });
+          acceptedBoxes.push(bboxOf(tab));
+          tabbed.set(lip, { t0, t1 });
+          placed = true;
+          break outer;
+        }
+      }
+    }
+    if (!placed) skipped++;
+  });
+
+  // Rebuild the segment lists: the tab's base span becomes a score line
+  // (any un-tabbed remainder of the lip stays a cut), and the tab outline
+  // joins the cuts.
+  const folds = net.folds.slice(), cuts = [];
+  const lerp = (s, t) => [s[0] + (s[2] - s[0]) * t, s[1] + (s[3] - s[1]) * t];
+  for (const info of net.cutInfo) {
+    const tb = tabbed.get(info);
+    if (!tb) { cuts.push(info.seg); continue; }
+    const A = lerp(info.seg, tb.t0), B = lerp(info.seg, tb.t1);
+    folds.push([A[0], A[1], B[0], B[1]]);
+    if (tb.t0 > 0) cuts.push([info.seg[0], info.seg[1], A[0], A[1]]);
+    if (tb.t1 < 1) cuts.push([B[0], B[1], info.seg[2], info.seg[3]]);
+  }
+  for (const { poly } of accepted) {
+    for (let i = 0; i < poly.length - 1; i++) {
+      cuts.push([poly[i][0], poly[i][1], poly[i + 1][0], poly[i + 1][1]]);
+    }
+  }
+  let { x0, y0, x1, y1 } = net.bbox;
+  for (const { poly } of accepted) {
+    for (const [px, py] of poly) {
+      x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+      x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+    }
+  }
+  return {
+    ...net, folds, cuts, bbox: { x0, y0, x1, y1 },
+    tabs: accepted.length, joints, skippedTabs: skipped,
+  };
+}
+
 const paperCache = new Map();
-function paperNet(base, subdiv, module) {
-  const key = base + "/" + subdiv + (module ? "/module" : "");
+function paperNet(base, subdiv, module, tabs) {
+  const key = base + "/" + subdiv + (module ? "/module" : "") + (tabs ? "/tabs" : "");
   if (!paperCache.has(key)) {
-    paperCache.set(key, computePaperNet(base, subdiv, module ? "module" : undefined));
+    paperCache.set(key, tabs
+      ? applyTabs(paperNet(base, subdiv, module))
+      : computePaperNet(base, subdiv, module ? "module" : undefined));
   }
   return paperCache.get(key);
 }
@@ -1135,6 +1315,7 @@ const state = {
   geoRadius: 12,
   geoCon: "panel",
   geoScope: "model",   // paper preview/download: whole model or one module
+  geoTabs: true,       // paper: glue tabs on cut edges
   ...store.load("miterpal.settings", {}),   // advanced, exact, theme
   advanced: store.load("miterpal.settings", {}).advanced ?? false,
   exact: store.load("miterpal.settings", {}).exact ?? false,
@@ -1158,6 +1339,7 @@ const els = {
   geoBaseCard: $("geoBaseCard"), geoBase: $("geoBase"),
   geoCard: $("geoCard"), geoTable: $("geoTable"), geoHint: $("geoHint"),
   geoSvgBtn: $("geoSvgBtn"), geoScopeRow: $("geoScopeRow"),
+  geoTabsRow: $("geoTabsRow"), geoTabsChk: $("geoTabsChk"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -1242,7 +1424,8 @@ function renderGeodesic() {
   const paper = state.geoCon === "paper";
   const module = paper && state.geoScope === "module";
   const g = geodesic(state.geoBase, state.geoSubdiv);
-  const net = paper ? paperNet(state.geoBase, state.geoSubdiv, module) : null;
+  const net = paper
+    ? paperNet(state.geoBase, state.geoSubdiv, module, state.geoTabs) : null;
   const copies = GEO_MODULE_COUNT[state.geoBase];
 
   els.geoBase.value = state.geoBase;
@@ -1274,6 +1457,8 @@ function renderGeodesic() {
   els.advanced.hidden = true;
   els.geoSvgBtn.hidden = !paper;
   els.geoScopeRow.hidden = !paper;
+  els.geoTabsRow.hidden = !paper;
+  els.geoTabsChk.checked = state.geoTabs;
   document.querySelectorAll("#geoScopeSeg button").forEach((b) =>
     b.classList.toggle("on", b.dataset.v === state.geoScope));
   els.geoSvgBtn.textContent = module
@@ -1300,7 +1485,17 @@ function renderGeodesic() {
             ? ` in ${net.pieces} pieces (a single sheet would overlap itself)`
             : " in one connected piece"}. `) +
       "Solid lines are cuts, dashed lines are folds; the slits close up as " +
-      "the sphere rounds out. The SVG has separate “cuts” and " +
+      "the sphere rounds out. " +
+      (state.geoTabs
+        ? `Glue tabs on ${net.tabs} of ${net.joints} joints — fold each tab ` +
+          "under the mating panel" +
+          (net.skippedTabs > 0
+            ? `; ${net.skippedTabs} joint${net.skippedTabs > 1 ? "s" : ""} had no ` +
+              "room for a tab (glue those edge-to-edge)" : "") +
+          (module ? ". Joints between module copies get a tab from each side — trim one if you prefer" : "") +
+          ". "
+        : "") +
+      "The SVG has separate “cuts” and " +
       "“scores” layers, sized in millimetres — with " +
       `R = ${fmtInput(state.geoRadius)}, that's a ${fmtInput(state.geoRadius)} mm ` +
       "radius; rescale in your cutter software if you used other units."
@@ -1492,9 +1687,14 @@ document.querySelectorAll("#geoConSeg button").forEach((b) =>
 document.querySelectorAll("#geoScopeSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.geoScope = b.dataset.v; render(); }));
 
+els.geoTabsChk.addEventListener("change", (e) => {
+  state.geoTabs = e.target.checked;
+  render();
+});
+
 els.geoSvgBtn.addEventListener("click", () => {
   const module = state.geoScope === "module";
-  const net = paperNet(state.geoBase, state.geoSubdiv, module);
+  const net = paperNet(state.geoBase, state.geoSubdiv, module, state.geoTabs);
   const copies = GEO_MODULE_COUNT[state.geoBase];
   const title = `${GEO_BASE_LABELS[state.geoBase]}, ${state.geoSubdiv} ` +
     `subdivision${state.geoSubdiv === 1 ? "" : "s"}, R=${state.geoRadius}` +
@@ -1504,7 +1704,8 @@ els.geoSvgBtn.addEventListener("click", () => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `miterpal-${state.geoBase}-${state.geoSubdiv}subdiv` +
-    `-R${state.geoRadius}-${module ? `module-cut${copies}` : "net"}.svg`;
+    `-R${state.geoRadius}-${module ? `module-cut${copies}` : "net"}` +
+    `${state.geoTabs ? "-tabs" : ""}.svg`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   toast(module ? `Module SVG downloaded — cut ${copies} copies` : "SVG net downloaded");
@@ -1554,7 +1755,8 @@ $("saveOk").addEventListener("click", () => {
   state.projects.push({ name, n: state.n, sideAngle: state.sideAngle,
     mode: state.mode, bitAngle: state.bitAngle,
     geoBase: state.geoBase, geoSubdiv: state.geoSubdiv,
-    geoRadius: state.geoRadius, geoCon: state.geoCon, geoScope: state.geoScope });
+    geoRadius: state.geoRadius, geoCon: state.geoCon, geoScope: state.geoScope,
+    geoTabs: state.geoTabs });
   persistProjects();
   dlgSave.close();
   toast(`Saved "${name}"`);
@@ -1597,6 +1799,7 @@ function renderProjects() {
       state.geoRadius = clamp(p.geoRadius ?? 12, 0, 1e6);
       state.geoCon = ["strut", "paper"].includes(p.geoCon) ? p.geoCon : "panel";
       state.geoScope = p.geoScope === "module" ? "module" : "model";
+      state.geoTabs = p.geoTabs !== false;
       dlgProjects.close();
       render();
     });
@@ -1660,7 +1863,7 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 // Expose the math for testing (node --experimental-default-type=module not
 // needed; tests read this file and eval the script block).
 if (typeof module !== "undefined") {
-  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG };
+  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs };
 }
 </script>
 </body>
