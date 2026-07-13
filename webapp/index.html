@@ -290,13 +290,25 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="woodChecklist">
     <details>
       <summary>In the workshop <small>Pre-cut checklist</small></summary>
       <div class="check"><input type="checkbox"><span>Mark the "outside face" on every blank before cutting.</span></div>
       <div class="check"><input type="checkbox"><span>Cut a test piece on scrap first &mdash; catch sign / edge-up mistakes.</span></div>
       <div class="check"><input type="checkbox"><span>Both edges get the same bevel and miter; flip the board end-for-end between cuts.</span></div>
       <div class="check"><input type="checkbox"><span>If your saw measures miter from the blade, use the complement (M&prime;).</span></div>
+    </details>
+  </div>
+
+  <div class="card" id="paperChecklist" hidden>
+    <details>
+      <summary>In the workshop <small>Cut &amp; fold checklist</small></summary>
+      <div class="check"><input type="checkbox"><span>Used units other than millimetres? Rescale the SVG in your cutter software before cutting (it's exported as 1 unit = 1&nbsp;mm).</span></div>
+      <div class="check"><input type="checkbox"><span>Score the dashed lines first, then cut the outline &mdash; the sheet stays rigid longer.</span></div>
+      <div class="check"><input type="checkbox"><span>Every fold bends the same way; fold with the printed lines inside so they're hidden on the finished model.</span></div>
+      <div class="check"><input type="checkbox"><span>Crease all folds sharply before any gluing.</span></div>
+      <div class="check"><input type="checkbox"><span>Glue tabs under the mating panel, one joint at a time &mdash; the slits close up as the sphere rounds out. Joints without a tab glue edge-to-edge.</span></div>
+      <div class="check"><input type="checkbox"><span>Building from modules: where two copies meet, each brings a tab &mdash; trim one of them.</span></div>
     </details>
   </div>
 </main>
@@ -1312,7 +1324,7 @@ const state = {
   mode: "miteredBox",
   geoBase: "icosahedron",
   geoSubdiv: 1,
-  geoRadius: 12,
+  geoRadius: 10,
   geoCon: "panel",
   geoScope: "model",   // paper preview/download: whole model or one module
   geoTabs: true,       // paper: glue tabs on cut edges
@@ -1340,6 +1352,7 @@ const els = {
   geoCard: $("geoCard"), geoTable: $("geoTable"), geoHint: $("geoHint"),
   geoSvgBtn: $("geoSvgBtn"), geoScopeRow: $("geoScopeRow"),
   geoTabsRow: $("geoTabsRow"), geoTabsChk: $("geoTabsChk"),
+  woodChecklist: $("woodChecklist"), paperChecklist: $("paperChecklist"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -1356,6 +1369,10 @@ function render() {
   els.mode.value = state.mode;
   els.geoBaseCard.hidden = !geo;
   els.geoCard.hidden = !geo;
+  // The workshop checklist only fits blade work; paper mode gets its own.
+  const paperMode = geo && state.geoCon === "paper";
+  els.woodChecklist.hidden = paperMode;
+  els.paperChecklist.hidden = !paperMode;
   if (geo) { renderGeodesic(); return; }
 
   const frame = state.mode === "pictureFrame";
@@ -1484,21 +1501,15 @@ function renderGeodesic() {
         : `Zero-thickness paper net${net.pieces > 1
             ? ` in ${net.pieces} pieces (a single sheet would overlap itself)`
             : " in one connected piece"}. `) +
-      "Solid lines are cuts, dashed lines are folds; the slits close up as " +
-      "the sphere rounds out. " +
+      "Solid lines are cuts, dashed lines are fold scores" +
       (state.geoTabs
-        ? `Glue tabs on ${net.tabs} of ${net.joints} joints — fold each tab ` +
-          "under the mating panel" +
+        ? `; glue tabs on ${net.tabs} of ${net.joints} joints` +
           (net.skippedTabs > 0
-            ? `; ${net.skippedTabs} joint${net.skippedTabs > 1 ? "s" : ""} had no ` +
-              "room for a tab (glue those edge-to-edge)" : "") +
-          (module ? ". Joints between module copies get a tab from each side — trim one if you prefer" : "") +
-          ". "
+            ? ` (no room on ${net.skippedTabs})` : "")
         : "") +
-      "The SVG has separate “cuts” and " +
+      ". The SVG has separate “cuts” and " +
       "“scores” layers, sized in millimetres — with " +
-      `R = ${fmtInput(state.geoRadius)}, that's a ${fmtInput(state.geoRadius)} mm ` +
-      "radius; rescale in your cutter software if you used other units."
+      `R = ${fmtInput(state.geoRadius)}, that's a ${fmtInput(state.geoRadius)} mm radius.`
     : strut
     ? "Lengths are hub-center to hub-center — subtract your hub fitting's " +
       "reach at each end. End cut is how far off square to cut both strut " +
@@ -1784,7 +1795,7 @@ function renderProjects() {
       : mode === "fixedBevelBit" ? `${modeLabels[mode]} · N=${p.n} · B=${p.bitAngle ?? 30}°`
       : mode === "geodesicSphere"
         ? `${modeLabels[mode]} · ${GEO_BASE_LABELS[p.geoBase ?? "icosahedron"]} · ` +
-          `${p.geoSubdiv ?? 1} subdiv · R=${p.geoRadius ?? 12}`
+          `${p.geoSubdiv ?? 1} subdiv · R=${p.geoRadius ?? 10}`
       : `${modeLabels[mode]} · N=${p.n} · S=${p.sideAngle}°`;
     row.innerHTML = `<span class="pname">${escapeHtml(p.name)}<small>${detail}</small></span>`;
     const load = document.createElement("button");
@@ -1796,7 +1807,7 @@ function renderProjects() {
       state.bitAngle = clamp(p.bitAngle ?? 30, 0, MAX_SIDE_ANGLE);
       state.geoBase = GEO_BASE_LABELS[p.geoBase] ? p.geoBase : "icosahedron";
       state.geoSubdiv = clamp(p.geoSubdiv ?? 1, 0, GEO_MAX_SUBDIV);
-      state.geoRadius = clamp(p.geoRadius ?? 12, 0, 1e6);
+      state.geoRadius = clamp(p.geoRadius ?? 10, 0, 1e6);
       state.geoCon = ["strut", "paper"].includes(p.geoCon) ? p.geoCon : "panel";
       state.geoScope = p.geoScope === "module" ? "module" : "model";
       state.geoTabs = p.geoTabs !== false;
