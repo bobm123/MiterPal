@@ -74,6 +74,19 @@ we'll refine these live.
    paper scale is essentially a mat template, which may be independently
    useful.
 
+4. **Picture Frame dimensions.** Add length, height, and material (stock)
+   width inputs, with a toggle for whether the given dimensions are the
+   *inside* (rabbet/opening) or *outside* of the frame. For N=4 this turns
+   the square into proper rectangles; for other N, treat the two dimensions
+   as major/minor axes of the polygon and scale side lengths accordingly.
+   Notes for implementation: a rectangle keeps 45° corners, but a stretched
+   (non-regular) polygon no longer has equal corner angles — each corner's
+   miter is half its own interior angle, and opposite sides come in pairs,
+   so the cut list becomes per-side lengths *plus* per-corner miters.
+   Output should give long-point/short-point lengths derived from the
+   stock width and the inside/outside reference. Same width/height inputs
+   feed backlog items 2 (3D parts) and 3 (box paper mode).
+
 ## Non-functional
 - App name/branding, icon, color scheme?
 - Accessibility (large type, VoiceOver)?
