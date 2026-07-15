@@ -1,7 +1,7 @@
 /* MiterPal service worker: cache-first app shell for offline use.
    Bump CACHE_VERSION whenever any cached file changes, so installed
    apps pick up the new version on their next online launch. */
-const CACHE_VERSION = "miterpal-v3";
+const CACHE_VERSION = "miterpal-v4";
 const ASSETS = [
   "./",
   "./index.html",
