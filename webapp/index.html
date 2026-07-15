@@ -257,6 +257,35 @@
     <div class="hint" id="angleHint">0 = upright &middot; + splays out &middot; &minus; slopes in</div>
   </div>
 
+  <div class="card" id="outCard" hidden>
+    <div class="row">
+      <span class="label">Output</span>
+      <div class="seg" id="boxOutSeg">
+        <button data-v="saw">Saw settings</button>
+        <button data-v="paper">Paper model</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="dimCard" hidden>
+    <div class="row">
+      <span class="label">Side length (A)</span>
+      <input class="value" id="dimA" inputmode="decimal" autocomplete="off">
+      <span class="unit"></span>
+    </div>
+    <div class="row" style="margin-top: 10px;">
+      <span class="label" id="dimBLabel">Wall height (H)</span>
+      <input class="value" id="dimB" inputmode="decimal" autocomplete="off">
+      <span class="unit"></span>
+    </div>
+    <div class="row" id="dimCRow" style="margin-top: 10px;" hidden>
+      <span class="label">Rabbet <small style="color:var(--text-dim)">optional</small></span>
+      <input class="value" id="dimC" inputmode="decimal" autocomplete="off">
+      <span class="unit"></span>
+    </div>
+    <div class="hint">Any units — the SVG exports 1 unit = 1 mm</div>
+  </div>
+
   <div class="results" id="results"></div>
   <div id="leanBanner"></div>
   <div class="secondary-results" id="advanced" hidden></div>
@@ -1175,6 +1204,8 @@ function applyTabs(net) {
   const tabbed = new Map();
   let joints = 0, skipped = 0;
   net.cutInfo.forEach((info, idx) => {
+    // Edges flagged noTab (e.g. a box wall's free top edge) stay plain cuts.
+    if (info.noTab) return;
     // Handle each pair once (from its first lip); boundaries stand alone.
     if (info.partner >= 0 && info.partner < idx) return;
     joints++;
@@ -1233,6 +1264,123 @@ function applyTabs(net) {
     ...net, folds, cuts, bbox: { x0, y0, x1, y1 },
     tabs: accepted.length, joints, skippedTabs: skipped,
   };
+}
+
+/* ---- Paper nets for the box / frame joint types --------------------------
+   At paper thickness the bevels drop out (mitered and butt boxes become the
+   same shape): the box unfolds to its N-gon base with a trapezoid wall
+   hinged on every base edge. With base edge A, wall height H (measured
+   along the face) and side lean S, each wall's top edge is
+   B = A + 2·H·sin(S)·tan(180°/N) — a rectangle when upright, flared when
+   splayed, tapered when sloped in. Corner joints are lip pairs, so the
+   glue-tab generator applies; wall tops are free edges (noTab).
+   The picture frame is flatter still: a mat template — the outer N-gon
+   with the opening (apothem reduced by the frame width) cut out.          */
+function boxPaperNet(n, sideAngleDeg, A, H) {
+  const alpha = Math.PI / n;
+  const rot = n % 2 === 0 ? Math.PI / n : 0; // match the top-view diagram
+  const Rc = A / (2 * Math.sin(alpha));
+  const verts = [];
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
+    verts.push([Rc * Math.cos(a), Rc * Math.sin(a)]);
+  }
+  const e = H * Math.sin(sideAngleDeg * DEG) * Math.tan(alpha);
+  const leg = Math.hypot(H, e);
+  const polys = [verts.map((v) => v.slice())];
+  const folds = [], cuts = [], cutInfo = [];
+  const cornerLip = {};
+  for (let i = 0; i < n; i++) {
+    const P1 = verts[i], P2 = verts[(i + 1) % n];
+    const ux = (P2[0] - P1[0]) / A, uy = (P2[1] - P1[1]) / A;
+    let nx = -uy, ny = ux;
+    if (((P1[0] + P2[0]) / 2) * nx + ((P1[1] + P2[1]) / 2) * ny < 0) {
+      nx = -nx; ny = -ny; // outward from the base polygon
+    }
+    const Q1 = [P1[0] + nx * H - ux * e, P1[1] + ny * H - uy * e];
+    const Q2 = [P2[0] + nx * H + ux * e, P2[1] + ny * H + uy * e];
+    const face = polys.length;
+    polys.push([P1.slice(), P2.slice(), Q2, Q1]);
+    folds.push([P1[0], P1[1], P2[0], P2[1]]);
+    const top = [Q1[0], Q1[1], Q2[0], Q2[1]];
+    cuts.push(top);
+    cutInfo.push({ seg: top, face, partner: -1, noTab: true });
+    // The two legs at each base corner form the joint's lip pair.
+    for (const [P, Q, corner] of [[P1, Q1, i], [P2, Q2, (i + 1) % n]]) {
+      const seg = [P[0], P[1], Q[0], Q[1]];
+      cuts.push(seg);
+      const idx = cutInfo.length;
+      cutInfo.push({ seg, face, partner: -1 });
+      if (cornerLip[corner] !== undefined) {
+        cutInfo[idx].partner = cornerLip[corner];
+        cutInfo[cornerLip[corner]].partner = idx;
+      } else {
+        cornerLip[corner] = idx;
+      }
+    }
+  }
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of polys) for (const [px, py] of p) {
+    x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+    x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+  }
+  return { polys, folds, cuts, cutInfo, pieces: 1,
+           bbox: { x0, y0, x1, y1 }, dims: { A, B: A + 2 * e, leg, H } };
+}
+
+// Optional rabbet (rebate) R: the recess on the back of the frame where the
+// glass/backing sits. It extends outward from the visible opening by R, so
+// the glass edge — drawn as a dashed reference line — sits at apothem
+// (inner + R). Must be smaller than the frame width to stay on the face.
+function framePaperNet(n, A, W, R = 0) {
+  const alpha = Math.PI / n;
+  const apothem = A / (2 * Math.tan(alpha));
+  const w = Math.min(W, 0.95 * apothem); // keep an opening
+  const k = (apothem - w) / apothem;
+  const rot = n % 2 === 0 ? Math.PI / n : 0;
+  const Rc = A / (2 * Math.sin(alpha));
+  const ring = (scale) => {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
+      pts.push([Rc * scale * Math.cos(a), Rc * scale * Math.sin(a)]);
+    }
+    return pts;
+  };
+  const outer = ring(1), inner = ring(k);
+  const cuts = [], cutInfo = [];
+  for (const rg of [outer, inner]) {
+    for (let i = 0; i < n; i++) {
+      const P1 = rg[i], P2 = rg[(i + 1) % n];
+      const seg = [P1[0], P1[1], P2[0], P2[1]];
+      cuts.push(seg);
+      cutInfo.push({ seg, face: rg === outer ? 0 : 1, partner: -1, noTab: true });
+    }
+  }
+  // Rabbet reference line (dashed) — the glass/backing size.
+  const polys = [outer, inner];
+  const folds = [];
+  const r = R > 0 ? Math.min(R, 0.95 * w) : 0; // strictly inside the face
+  let rabbetSide = 0;
+  if (r > 0) {
+    const kr = (apothem - w + r) / apothem;
+    const rabbet = ring(kr);
+    polys.push(rabbet);
+    rabbetSide = A * kr;
+    for (let i = 0; i < n; i++) {
+      const P1 = rabbet[i], P2 = rabbet[(i + 1) % n];
+      folds.push([P1[0], P1[1], P2[0], P2[1]]);
+    }
+  }
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const [px, py] of outer) {
+    x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+    x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+  }
+  return { polys, folds, cuts, cutInfo, pieces: 1,
+           bbox: { x0, y0, x1, y1 },
+           dims: { A, W: w, innerSide: A * k, clamped: w !== W,
+                   rabbet: r, rabbetClamped: R > 0 && r !== R, rabbetSide } };
 }
 
 const paperCache = new Map();
@@ -1328,6 +1476,11 @@ const state = {
   geoCon: "panel",
   geoScope: "model",   // paper preview/download: whole model or one module
   geoTabs: true,       // paper: glue tabs on cut edges
+  boxOut: "saw",       // box/frame modes: saw settings or paper model
+  dimA: 60,            // paper: base/outer side length
+  dimH: 40,            // paper: box wall height (along the face)
+  dimW: 15,            // paper: picture frame width
+  dimRabbet: 0,        // paper: picture frame rabbet (0 = none)
   ...store.load("miterpal.settings", {}),   // advanced, exact, theme
   advanced: store.load("miterpal.settings", {}).advanced ?? false,
   exact: store.load("miterpal.settings", {}).exact ?? false,
@@ -1353,6 +1506,9 @@ const els = {
   geoSvgBtn: $("geoSvgBtn"), geoScopeRow: $("geoScopeRow"),
   geoTabsRow: $("geoTabsRow"), geoTabsChk: $("geoTabsChk"),
   woodChecklist: $("woodChecklist"), paperChecklist: $("paperChecklist"),
+  outCard: $("outCard"), dimCard: $("dimCard"),
+  dimA: $("dimA"), dimB: $("dimB"), dimBLabel: $("dimBLabel"),
+  dimC: $("dimC"), dimCRow: $("dimCRow"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -1367,13 +1523,19 @@ function render() {
   applyTheme();
   const geo = state.mode === "geodesicSphere";
   els.mode.value = state.mode;
+  const boxish = ["pictureFrame", "miteredBox", "buttJointBox"].includes(state.mode);
+  const boxPaper = boxish && state.boxOut === "paper";
   els.geoBaseCard.hidden = !geo;
-  els.geoCard.hidden = !geo;
+  els.geoCard.hidden = !(geo || boxPaper);
+  els.outCard.hidden = !boxish;
+  els.dimCard.hidden = !boxPaper;
   // The workshop checklist only fits blade work; paper mode gets its own.
-  const paperMode = geo && state.geoCon === "paper";
+  const paperMode = (geo && state.geoCon === "paper") || boxPaper;
   els.woodChecklist.hidden = paperMode;
   els.paperChecklist.hidden = !paperMode;
   if (geo) { renderGeodesic(); return; }
+  document.querySelectorAll("#boxOutSeg button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.v === state.boxOut));
 
   const frame = state.mode === "pictureFrame";
   const bit = state.mode === "fixedBevelBit";
@@ -1392,6 +1554,8 @@ function render() {
   els.angleHint.textContent = bit
     ? "Bevel cutter angle from vertical"
     : "0 = upright · + splays out · − slopes in";
+
+  if (boxPaper) { renderBoxPaper(frame, r); return; }
 
   if (bit && !r.feasible) {
     els.results.innerHTML =
@@ -1428,6 +1592,85 @@ function render() {
   els.leanCaption.textContent = `Side lean (${r.sideAngle.toFixed(1)}°)`;
   drawTopView();
   if (!frame) drawLeanView(r.sideAngle);
+}
+
+/* ---- Box / frame paper rendering ------------------------------------------ */
+function renderBoxPaper(frame, r) {
+  const n = state.n;
+  els.dimBLabel.textContent = frame ? "Frame width (W)" : "Wall height (H)";
+  els.dimCRow.hidden = !frame;
+  if (document.activeElement !== els.dimA) els.dimA.value = fmtInput(state.dimA);
+  if (document.activeElement !== els.dimB) {
+    els.dimB.value = fmtInput(frame ? state.dimW : state.dimH);
+  }
+  if (frame && document.activeElement !== els.dimC) {
+    els.dimC.value = fmtInput(state.dimRabbet);
+  }
+
+  const net0 = frame
+    ? framePaperNet(n, state.dimA, state.dimW, state.dimRabbet)
+    : boxPaperNet(n, state.sideAngle, state.dimA, state.dimH);
+  const tabs = !frame && state.geoTabs;
+  const net = tabs ? applyTabs(net0) : net0;
+
+  els.results.innerHTML = frame
+    ? card(1, "One piece") + card(n, "Sides")
+    : card(n + 1, "Panels") + card(n, "Corner joints");
+  els.leanBanner.hidden = true;
+  els.advanced.hidden = true;
+  els.geoScopeRow.hidden = true;
+  els.geoTabsRow.hidden = frame;
+  els.geoTabsChk.checked = state.geoTabs;
+  els.geoSvgBtn.hidden = false;
+  els.geoSvgBtn.textContent =
+    frame ? "Download SVG — frame template" : "Download SVG — fold-up box";
+
+  const d = net.dims ?? net0.dims;
+  els.geoTable.innerHTML =
+    `<tr><th>Edge</th><th>Qty</th><th>Length</th></tr>` +
+    (frame
+      ? `<tr><td>Outer</td><td>${n}</td><td>${formatLen(d.A, state.exact)}</td></tr>` +
+        `<tr><td>Opening</td><td>${n}</td><td>${formatLen(d.innerSide, state.exact)}</td></tr>` +
+        (d.rabbet > 0
+          ? `<tr><td>Rabbet (glass)</td><td>${n}</td><td>${formatLen(d.rabbetSide, state.exact)}</td></tr>`
+          : "")
+      : `<tr><td>Base (fold)</td><td>${n}</td><td>${formatLen(d.A, state.exact)}</td></tr>` +
+        `<tr><td>Wall top</td><td>${n}</td><td>${formatLen(d.B, state.exact)}</td></tr>` +
+        `<tr><td>Wall side</td><td>${2 * n}</td><td>${formatLen(d.leg, state.exact)}</td></tr>`);
+
+  els.geoHint.innerHTML = frame
+    ? `Flat frame template — the outer ${n}-gon with the opening cut out, ` +
+      `${formatLen(d.W, state.exact)} wide all around.` +
+      (d.rabbet > 0
+        ? ` The dashed line is the rabbet — cut glass/backing to that ` +
+          `${formatLen(d.rabbetSide, state.exact)} size so it sits in the recess.`
+        : "") +
+      (d.clamped
+        ? " <b>Width was reduced to keep an opening</b> — at this size the " +
+          "frame would close up."
+        : "") +
+      (d.rabbetClamped
+        ? " <b>Rabbet was reduced to stay under the frame width.</b>"
+        : "") +
+      " The SVG has separate “cuts” and “scores” (rabbet) layers, " +
+      "sized in millimetres (1 unit = 1 mm)."
+    : `Zero-thickness fold-up box: the ${n}-gon base with its walls unfolded ` +
+      "flat. Dashed base edges are fold scores; walls " +
+      (state.sideAngle > 0 ? "flare outward" :
+       state.sideAngle < 0 ? "taper inward" : "stand upright") +
+      (tabs
+        ? `; glue tabs on ${net.tabs} of ${net.joints} corner joints` +
+          (net.skippedTabs > 0 ? ` (no room on ${net.skippedTabs})` : "")
+        : "") +
+      ". At paper thickness the mitered and butt-joint boxes are the same " +
+      "shape. The SVG has separate “cuts” and “scores” layers, " +
+      "sized in millimetres (1 unit = 1 mm).";
+
+  els.leanFigure.hidden = true;
+  els.topCaption.textContent = frame
+    ? `${n}-sided frame template`
+    : `${n}-sided box — unfolded (S = ${fmtInput(state.sideAngle)}°)`;
+  drawNetView(net);
 }
 
 /* ---- Geodesic rendering --------------------------------------------------- */
@@ -1692,6 +1935,31 @@ els.nMinus.addEventListener("click", () => {
 });
 
 els.geoBase.addEventListener("change", () => { state.geoBase = els.geoBase.value; render(); });
+document.querySelectorAll("#boxOutSeg button").forEach((b) =>
+  b.addEventListener("click", () => { state.boxOut = b.dataset.v; render(); }));
+
+// Paper dimension inputs: A is shared; the second field is H for boxes and
+// W for the picture frame.
+els.dimA.addEventListener("input", () => {
+  const v = parseFloat(els.dimA.value);
+  if (!Number.isNaN(v) && v > 0) { state.dimA = clamp(v, 0.001, 1e6); render(); }
+});
+els.dimB.addEventListener("input", () => {
+  const v = parseFloat(els.dimB.value);
+  if (Number.isNaN(v) || v <= 0) return;
+  if (state.mode === "pictureFrame") state.dimW = clamp(v, 0.001, 1e6);
+  else state.dimH = clamp(v, 0.001, 1e6);
+  render();
+});
+// Third field: picture-frame rabbet (optional; 0 or blank means none).
+els.dimC.addEventListener("input", () => {
+  const v = parseFloat(els.dimC.value);
+  if (els.dimC.value.trim() === "" || els.dimC.value === "0") { state.dimRabbet = 0; render(); return; }
+  if (!Number.isNaN(v) && v >= 0) { state.dimRabbet = clamp(v, 0, 1e6); render(); }
+});
+els.dimA.addEventListener("blur", () => render());
+els.dimB.addEventListener("blur", () => render());
+els.dimC.addEventListener("blur", () => render());
 document.querySelectorAll("#geoConSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.geoCon = b.dataset.v; render(); }));
 
@@ -1703,23 +1971,49 @@ els.geoTabsChk.addEventListener("change", (e) => {
   render();
 });
 
-els.geoSvgBtn.addEventListener("click", () => {
-  const module = state.geoScope === "module";
-  const net = paperNet(state.geoBase, state.geoSubdiv, module, state.geoTabs);
-  const copies = GEO_MODULE_COUNT[state.geoBase];
-  const title = `${GEO_BASE_LABELS[state.geoBase]}, ${state.geoSubdiv} ` +
-    `subdivision${state.geoSubdiv === 1 ? "" : "s"}, R=${state.geoRadius}` +
-    (module ? ` — one module, cut ${copies} copies and join at cut edges` : "");
-  const blob = new Blob([paperSVG(net, state.geoRadius, title)],
-    { type: "image/svg+xml" });
+function saveSVG(net, scale, title, filename, message) {
+  const blob = new Blob([paperSVG(net, scale, title)], { type: "image/svg+xml" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `miterpal-${state.geoBase}-${state.geoSubdiv}subdiv` +
-    `-R${state.geoRadius}-${module ? `module-cut${copies}` : "net"}` +
-    `${state.geoTabs ? "-tabs" : ""}.svg`;
+  a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  toast(module ? `Module SVG downloaded — cut ${copies} copies` : "SVG net downloaded");
+  toast(message);
+}
+
+els.geoSvgBtn.addEventListener("click", () => {
+  if (state.mode === "geodesicSphere") {
+    const module = state.geoScope === "module";
+    const net = paperNet(state.geoBase, state.geoSubdiv, module, state.geoTabs);
+    const copies = GEO_MODULE_COUNT[state.geoBase];
+    saveSVG(net, state.geoRadius,
+      `${GEO_BASE_LABELS[state.geoBase]}, ${state.geoSubdiv} ` +
+        `subdivision${state.geoSubdiv === 1 ? "" : "s"}, R=${state.geoRadius}` +
+        (module ? ` — one module, cut ${copies} copies and join at cut edges` : ""),
+      `miterpal-${state.geoBase}-${state.geoSubdiv}subdiv-R${state.geoRadius}` +
+        `-${module ? `module-cut${copies}` : "net"}${state.geoTabs ? "-tabs" : ""}.svg`,
+      module ? `Module SVG downloaded — cut ${copies} copies` : "SVG net downloaded");
+    return;
+  }
+  // Box / frame paper downloads. Nets are built in real units, so scale = 1.
+  if (state.mode === "pictureFrame") {
+    const net = framePaperNet(state.n, state.dimA, state.dimW, state.dimRabbet);
+    saveSVG(net, 1,
+      `${state.n}-sided frame template, A=${state.dimA}, W=${net.dims.W}` +
+        (net.dims.rabbet > 0 ? `, rabbet ${net.dims.rabbet}` : ""),
+      `miterpal-frame-N${state.n}-A${state.dimA}-W${net.dims.W}` +
+        `${net.dims.rabbet > 0 ? `-rabbet${net.dims.rabbet}` : ""}.svg`,
+      "Frame template downloaded");
+  } else {
+    const net0 = boxPaperNet(state.n, state.sideAngle, state.dimA, state.dimH);
+    const net = state.geoTabs ? applyTabs(net0) : net0;
+    saveSVG(net, 1,
+      `${state.n}-sided fold-up box, A=${state.dimA}, H=${state.dimH}, ` +
+        `S=${state.sideAngle}°`,
+      `miterpal-box-N${state.n}-S${state.sideAngle}-A${state.dimA}` +
+        `-H${state.dimH}${state.geoTabs ? "-tabs" : ""}.svg`,
+      "Fold-up box SVG downloaded");
+  }
 });
 
 // The angle card edits S in the box modes, B in Fixed Bevel Bit mode, and
@@ -1767,7 +2061,9 @@ $("saveOk").addEventListener("click", () => {
     mode: state.mode, bitAngle: state.bitAngle,
     geoBase: state.geoBase, geoSubdiv: state.geoSubdiv,
     geoRadius: state.geoRadius, geoCon: state.geoCon, geoScope: state.geoScope,
-    geoTabs: state.geoTabs });
+    geoTabs: state.geoTabs, boxOut: state.boxOut,
+    dimA: state.dimA, dimH: state.dimH, dimW: state.dimW,
+    dimRabbet: state.dimRabbet });
   persistProjects();
   dlgSave.close();
   toast(`Saved "${name}"`);
@@ -1811,6 +2107,11 @@ function renderProjects() {
       state.geoCon = ["strut", "paper"].includes(p.geoCon) ? p.geoCon : "panel";
       state.geoScope = p.geoScope === "module" ? "module" : "model";
       state.geoTabs = p.geoTabs !== false;
+      state.boxOut = p.boxOut === "paper" ? "paper" : "saw";
+      state.dimA = clamp(p.dimA ?? 60, 0.001, 1e6);
+      state.dimH = clamp(p.dimH ?? 40, 0.001, 1e6);
+      state.dimW = clamp(p.dimW ?? 15, 0.001, 1e6);
+      state.dimRabbet = clamp(p.dimRabbet ?? 0, 0, 1e6);
       dlgProjects.close();
       render();
     });
@@ -1874,7 +2175,7 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 // Expose the math for testing (node --experimental-default-type=module not
 // needed; tests read this file and eval the script block).
 if (typeof module !== "undefined") {
-  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs };
+  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs, boxPaperNet, framePaperNet };
 }
 </script>
 </body>
