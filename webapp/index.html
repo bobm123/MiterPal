@@ -278,6 +278,11 @@
       <input class="value" id="dimB" inputmode="decimal" autocomplete="off">
       <span class="unit"></span>
     </div>
+    <div class="row" id="dimCRow" style="margin-top: 10px;" hidden>
+      <span class="label">Rabbet <small style="color:var(--text-dim)">optional</small></span>
+      <input class="value" id="dimC" inputmode="decimal" autocomplete="off">
+      <span class="unit"></span>
+    </div>
     <div class="hint">Any units — the SVG exports 1 unit = 1 mm</div>
   </div>
 
@@ -1323,26 +1328,48 @@ function boxPaperNet(n, sideAngleDeg, A, H) {
            bbox: { x0, y0, x1, y1 }, dims: { A, B: A + 2 * e, leg, H } };
 }
 
-function framePaperNet(n, A, W) {
+// Optional rabbet (rebate) R: the recess on the back of the frame where the
+// glass/backing sits. It extends outward from the visible opening by R, so
+// the glass edge — drawn as a dashed reference line — sits at apothem
+// (inner + R). Must be smaller than the frame width to stay on the face.
+function framePaperNet(n, A, W, R = 0) {
   const alpha = Math.PI / n;
   const apothem = A / (2 * Math.tan(alpha));
   const w = Math.min(W, 0.95 * apothem); // keep an opening
   const k = (apothem - w) / apothem;
   const rot = n % 2 === 0 ? Math.PI / n : 0;
   const Rc = A / (2 * Math.sin(alpha));
-  const outer = [], inner = [];
-  for (let i = 0; i < n; i++) {
-    const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
-    outer.push([Rc * Math.cos(a), Rc * Math.sin(a)]);
-    inner.push([Rc * k * Math.cos(a), Rc * k * Math.sin(a)]);
-  }
-  const cuts = [], cutInfo = [];
-  for (const ring of [outer, inner]) {
+  const ring = (scale) => {
+    const pts = [];
     for (let i = 0; i < n; i++) {
-      const P1 = ring[i], P2 = ring[(i + 1) % n];
+      const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
+      pts.push([Rc * scale * Math.cos(a), Rc * scale * Math.sin(a)]);
+    }
+    return pts;
+  };
+  const outer = ring(1), inner = ring(k);
+  const cuts = [], cutInfo = [];
+  for (const rg of [outer, inner]) {
+    for (let i = 0; i < n; i++) {
+      const P1 = rg[i], P2 = rg[(i + 1) % n];
       const seg = [P1[0], P1[1], P2[0], P2[1]];
       cuts.push(seg);
-      cutInfo.push({ seg, face: ring === outer ? 0 : 1, partner: -1, noTab: true });
+      cutInfo.push({ seg, face: rg === outer ? 0 : 1, partner: -1, noTab: true });
+    }
+  }
+  // Rabbet reference line (dashed) — the glass/backing size.
+  const polys = [outer, inner];
+  const folds = [];
+  const r = R > 0 ? Math.min(R, 0.95 * w) : 0; // strictly inside the face
+  let rabbetSide = 0;
+  if (r > 0) {
+    const kr = (apothem - w + r) / apothem;
+    const rabbet = ring(kr);
+    polys.push(rabbet);
+    rabbetSide = A * kr;
+    for (let i = 0; i < n; i++) {
+      const P1 = rabbet[i], P2 = rabbet[(i + 1) % n];
+      folds.push([P1[0], P1[1], P2[0], P2[1]]);
     }
   }
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -1350,9 +1377,10 @@ function framePaperNet(n, A, W) {
     x0 = Math.min(x0, px); y0 = Math.min(y0, py);
     x1 = Math.max(x1, px); y1 = Math.max(y1, py);
   }
-  return { polys: [outer, inner], folds: [], cuts, cutInfo, pieces: 1,
+  return { polys, folds, cuts, cutInfo, pieces: 1,
            bbox: { x0, y0, x1, y1 },
-           dims: { A, W: w, innerSide: A * k, clamped: w !== W } };
+           dims: { A, W: w, innerSide: A * k, clamped: w !== W,
+                   rabbet: r, rabbetClamped: R > 0 && r !== R, rabbetSide } };
 }
 
 const paperCache = new Map();
@@ -1452,6 +1480,7 @@ const state = {
   dimA: 60,            // paper: base/outer side length
   dimH: 40,            // paper: box wall height (along the face)
   dimW: 15,            // paper: picture frame width
+  dimRabbet: 0,        // paper: picture frame rabbet (0 = none)
   ...store.load("miterpal.settings", {}),   // advanced, exact, theme
   advanced: store.load("miterpal.settings", {}).advanced ?? false,
   exact: store.load("miterpal.settings", {}).exact ?? false,
@@ -1479,6 +1508,7 @@ const els = {
   woodChecklist: $("woodChecklist"), paperChecklist: $("paperChecklist"),
   outCard: $("outCard"), dimCard: $("dimCard"),
   dimA: $("dimA"), dimB: $("dimB"), dimBLabel: $("dimBLabel"),
+  dimC: $("dimC"), dimCRow: $("dimCRow"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -1568,13 +1598,17 @@ function render() {
 function renderBoxPaper(frame, r) {
   const n = state.n;
   els.dimBLabel.textContent = frame ? "Frame width (W)" : "Wall height (H)";
+  els.dimCRow.hidden = !frame;
   if (document.activeElement !== els.dimA) els.dimA.value = fmtInput(state.dimA);
   if (document.activeElement !== els.dimB) {
     els.dimB.value = fmtInput(frame ? state.dimW : state.dimH);
   }
+  if (frame && document.activeElement !== els.dimC) {
+    els.dimC.value = fmtInput(state.dimRabbet);
+  }
 
   const net0 = frame
-    ? framePaperNet(n, state.dimA, state.dimW)
+    ? framePaperNet(n, state.dimA, state.dimW, state.dimRabbet)
     : boxPaperNet(n, state.sideAngle, state.dimA, state.dimH);
   const tabs = !frame && state.geoTabs;
   const net = tabs ? applyTabs(net0) : net0;
@@ -1596,19 +1630,30 @@ function renderBoxPaper(frame, r) {
     `<tr><th>Edge</th><th>Qty</th><th>Length</th></tr>` +
     (frame
       ? `<tr><td>Outer</td><td>${n}</td><td>${formatLen(d.A, state.exact)}</td></tr>` +
-        `<tr><td>Inner</td><td>${n}</td><td>${formatLen(d.innerSide, state.exact)}</td></tr>`
+        `<tr><td>Opening</td><td>${n}</td><td>${formatLen(d.innerSide, state.exact)}</td></tr>` +
+        (d.rabbet > 0
+          ? `<tr><td>Rabbet (glass)</td><td>${n}</td><td>${formatLen(d.rabbetSide, state.exact)}</td></tr>`
+          : "")
       : `<tr><td>Base (fold)</td><td>${n}</td><td>${formatLen(d.A, state.exact)}</td></tr>` +
         `<tr><td>Wall top</td><td>${n}</td><td>${formatLen(d.B, state.exact)}</td></tr>` +
         `<tr><td>Wall side</td><td>${2 * n}</td><td>${formatLen(d.leg, state.exact)}</td></tr>`);
 
   els.geoHint.innerHTML = frame
     ? `Flat frame template — the outer ${n}-gon with the opening cut out, ` +
-      `${formatLen(d.W, state.exact)} wide all around. No folds, just cuts.` +
+      `${formatLen(d.W, state.exact)} wide all around.` +
+      (d.rabbet > 0
+        ? ` The dashed line is the rabbet — cut glass/backing to that ` +
+          `${formatLen(d.rabbetSide, state.exact)} size so it sits in the recess.`
+        : "") +
       (d.clamped
         ? " <b>Width was reduced to keep an opening</b> — at this size the " +
           "frame would close up."
         : "") +
-      " The SVG is sized in millimetres (1 unit = 1 mm)."
+      (d.rabbetClamped
+        ? " <b>Rabbet was reduced to stay under the frame width.</b>"
+        : "") +
+      " The SVG has separate “cuts” and “scores” (rabbet) layers, " +
+      "sized in millimetres (1 unit = 1 mm)."
     : `Zero-thickness fold-up box: the ${n}-gon base with its walls unfolded ` +
       "flat. Dashed base edges are fold scores; walls " +
       (state.sideAngle > 0 ? "flare outward" :
@@ -1906,8 +1951,15 @@ els.dimB.addEventListener("input", () => {
   else state.dimH = clamp(v, 0.001, 1e6);
   render();
 });
+// Third field: picture-frame rabbet (optional; 0 or blank means none).
+els.dimC.addEventListener("input", () => {
+  const v = parseFloat(els.dimC.value);
+  if (els.dimC.value.trim() === "" || els.dimC.value === "0") { state.dimRabbet = 0; render(); return; }
+  if (!Number.isNaN(v) && v >= 0) { state.dimRabbet = clamp(v, 0, 1e6); render(); }
+});
 els.dimA.addEventListener("blur", () => render());
 els.dimB.addEventListener("blur", () => render());
+els.dimC.addEventListener("blur", () => render());
 document.querySelectorAll("#geoConSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.geoCon = b.dataset.v; render(); }));
 
@@ -1945,10 +1997,12 @@ els.geoSvgBtn.addEventListener("click", () => {
   }
   // Box / frame paper downloads. Nets are built in real units, so scale = 1.
   if (state.mode === "pictureFrame") {
-    const net = framePaperNet(state.n, state.dimA, state.dimW);
+    const net = framePaperNet(state.n, state.dimA, state.dimW, state.dimRabbet);
     saveSVG(net, 1,
-      `${state.n}-sided frame template, A=${state.dimA}, W=${net.dims.W}`,
-      `miterpal-frame-N${state.n}-A${state.dimA}-W${net.dims.W}.svg`,
+      `${state.n}-sided frame template, A=${state.dimA}, W=${net.dims.W}` +
+        (net.dims.rabbet > 0 ? `, rabbet ${net.dims.rabbet}` : ""),
+      `miterpal-frame-N${state.n}-A${state.dimA}-W${net.dims.W}` +
+        `${net.dims.rabbet > 0 ? `-rabbet${net.dims.rabbet}` : ""}.svg`,
       "Frame template downloaded");
   } else {
     const net0 = boxPaperNet(state.n, state.sideAngle, state.dimA, state.dimH);
@@ -2008,7 +2062,8 @@ $("saveOk").addEventListener("click", () => {
     geoBase: state.geoBase, geoSubdiv: state.geoSubdiv,
     geoRadius: state.geoRadius, geoCon: state.geoCon, geoScope: state.geoScope,
     geoTabs: state.geoTabs, boxOut: state.boxOut,
-    dimA: state.dimA, dimH: state.dimH, dimW: state.dimW });
+    dimA: state.dimA, dimH: state.dimH, dimW: state.dimW,
+    dimRabbet: state.dimRabbet });
   persistProjects();
   dlgSave.close();
   toast(`Saved "${name}"`);
@@ -2056,6 +2111,7 @@ function renderProjects() {
       state.dimA = clamp(p.dimA ?? 60, 0.001, 1e6);
       state.dimH = clamp(p.dimH ?? 40, 0.001, 1e6);
       state.dimW = clamp(p.dimW ?? 15, 0.001, 1e6);
+      state.dimRabbet = clamp(p.dimRabbet ?? 0, 0, 1e6);
       dlgProjects.close();
       render();
     });
