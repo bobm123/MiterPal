@@ -283,7 +283,7 @@
       <input class="value" id="dimC" inputmode="decimal" autocomplete="off">
       <span class="unit"></span>
     </div>
-    <div class="hint">Any units — the SVG exports 1 unit = 1 mm</div>
+    <div class="hint" id="dimHint">Any units — the SVG exports 1 unit = 1 mm</div>
   </div>
 
   <div class="results" id="results"></div>
@@ -1508,7 +1508,7 @@ const els = {
   woodChecklist: $("woodChecklist"), paperChecklist: $("paperChecklist"),
   outCard: $("outCard"), dimCard: $("dimCard"),
   dimA: $("dimA"), dimB: $("dimB"), dimBLabel: $("dimBLabel"),
-  dimC: $("dimC"), dimCRow: $("dimCRow"),
+  dimC: $("dimC"), dimCRow: $("dimCRow"), dimHint: $("dimHint"),
   results: $("results"), leanBanner: $("leanBanner"), advanced: $("advanced"),
   topView: $("topView"), leanView: $("leanView"),
   topCaption: $("topCaption"), leanCaption: $("leanCaption"), leanFigure: $("leanFigure"),
@@ -1525,10 +1525,11 @@ function render() {
   els.mode.value = state.mode;
   const boxish = ["pictureFrame", "miteredBox", "buttJointBox"].includes(state.mode);
   const boxPaper = boxish && state.boxOut === "paper";
+  const frameSaw = state.mode === "pictureFrame" && !boxPaper; // frame stick lengths
   els.geoBaseCard.hidden = !geo;
-  els.geoCard.hidden = !(geo || boxPaper);
+  els.geoCard.hidden = !(geo || boxPaper || frameSaw);
   els.outCard.hidden = !boxish;
-  els.dimCard.hidden = !boxPaper;
+  els.dimCard.hidden = !(boxPaper || frameSaw);
   // The workshop checklist only fits blade work; paper mode gets its own.
   const paperMode = (geo && state.geoCon === "paper") || boxPaper;
   els.woodChecklist.hidden = paperMode;
@@ -1556,6 +1557,31 @@ function render() {
     : "0 = upright · + splays out · − slopes in";
 
   if (boxPaper) { renderBoxPaper(frame, r); return; }
+
+  // Picture frame, saw mode: report the per-stick material lengths alongside
+  // the miter. The three lengths are the frame's outer, opening, and rabbet
+  // polygon sides — the same values the paper template uses.
+  if (frameSaw) {
+    updateDimInputs(true, false);
+    const fd = framePaperNet(state.n, state.dimA, state.dimW, state.dimRabbet).dims;
+    els.geoTable.innerHTML =
+      `<tr><th>Length</th><th>Qty</th><th>Measure</th></tr>` +
+      `<tr><td>Outside</td><td>${state.n}</td><td>${formatLen(fd.A, state.exact)}</td></tr>` +
+      `<tr><td>Inside</td><td>${state.n}</td><td>${formatLen(fd.innerSide, state.exact)}</td></tr>` +
+      (fd.rabbet > 0
+        ? `<tr><td>Rabbet</td><td>${state.n}</td><td>${formatLen(fd.rabbetSide, state.exact)}</td></tr>`
+        : "");
+    els.geoHint.innerHTML =
+      `Per-stick lengths for ${state.n} pieces mitered at ` +
+      `${formatAngle(r.miter, state.exact)} — outside is the long point, ` +
+      `inside the short point` +
+      (fd.rabbet > 0 ? ", rabbet is the glass shoulder" : "") + "." +
+      (fd.clamped ? " <b>Width reduced to keep an opening.</b>" : "") +
+      (fd.rabbetClamped ? " <b>Rabbet reduced to stay under the frame width.</b>" : "");
+    els.geoSvgBtn.hidden = true;
+    els.geoScopeRow.hidden = true;
+    els.geoTabsRow.hidden = true;
+  }
 
   if (bit && !r.feasible) {
     els.results.innerHTML =
@@ -1595,10 +1621,14 @@ function render() {
 }
 
 /* ---- Box / frame paper rendering ------------------------------------------ */
-function renderBoxPaper(frame, r) {
-  const n = state.n;
+// Labels + values for the dimension card, shared by frame saw mode and the
+// box/frame paper modes. Frame gets width + rabbet; the box gets wall height.
+function updateDimInputs(frame, paper) {
   els.dimBLabel.textContent = frame ? "Frame width (W)" : "Wall height (H)";
   els.dimCRow.hidden = !frame;
+  els.dimHint.textContent = paper
+    ? "Any units — the SVG exports 1 unit = 1 mm"
+    : "Any units — lengths below use the same units";
   if (document.activeElement !== els.dimA) els.dimA.value = fmtInput(state.dimA);
   if (document.activeElement !== els.dimB) {
     els.dimB.value = fmtInput(frame ? state.dimW : state.dimH);
@@ -1606,6 +1636,11 @@ function renderBoxPaper(frame, r) {
   if (frame && document.activeElement !== els.dimC) {
     els.dimC.value = fmtInput(state.dimRabbet);
   }
+}
+
+function renderBoxPaper(frame, r) {
+  const n = state.n;
+  updateDimInputs(frame, true);
 
   const net0 = frame
     ? framePaperNet(n, state.dimA, state.dimW, state.dimRabbet)
