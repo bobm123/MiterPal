@@ -87,6 +87,17 @@ we'll refine these live.
    stock width and the inside/outside reference. Same width/height inputs
    feed backlog items 2 (3D parts) and 3 (box paper mode).
 
+5. **Dodecahedron base solid for Geodesic Sphere mode.** Treat it like the
+   cube, since its faces aren't triangles: pre-triangulate each pentagon
+   through its sphere-projected center (5 triangles per face — a pentakis
+   dodecahedron, 60 triangles) and count that as subdivision 1, with
+   subdivision 0 special-cased as the true flat dodecahedron — 12 pentagon
+   panels, one edge class, 116.57° dihedral so a 31.72° edge bevel, and a
+   classic dodecahedron net in paper mode (flat-cube-cross equivalent).
+   Also: GEO_MODULE_COUNT = 12, and the paper module becomes a pentagon
+   patch. Max subdivision may want to stay at 2 (60 × 4² = 960 faces at
+   subdiv 3 is fine, but the cut-list class count gets long).
+
 ## Non-functional
 - App name/branding, icon, color scheme?
 - Accessibility (large type, VoiceOver)?
