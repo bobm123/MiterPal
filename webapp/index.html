@@ -1486,12 +1486,15 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
   const dx = (bandB.x0 + bandB.x1) / 2 - (baseB.x0 + baseB.x1) / 2;
   const dy = bandB.y1 + gap - baseB.y0;
   const basePts = base.map(([x, y]) => [x + dx, y + dy]);
-  for (const s of bfolds) folds.push([s[0] + dx, s[1] + dy, s[2] + dx, s[3] + dy]);
+  const bandFolds = folds.slice();
+  const baseFolds = bfolds.map((s) => [s[0] + dx, s[1] + dy, s[2] + dx, s[3] + dy]);
 
   const cutPaths = [band, basePts];
   const all = band.concat(basePts);
   const bb = bbOf(all);
-  return { polys: cutPaths, folds, cuts: [], cutPaths, cutInfo: [], pieces: 2,
+  return { polys: cutPaths, folds: bandFolds.concat(baseFolds),
+           foldGroups: [bandFolds, baseFolds],
+           cuts: [], cutPaths, cutInfo: [], pieces: 2,
            bbox: bb, dims: { A, B, leg, H, tabs, tabPct: pct * 100 } };
 }
 
@@ -1515,15 +1518,8 @@ function framePaperNet(n, A, W, R = 0) {
     return pts;
   };
   const outer = ring(1), inner = ring(k);
-  const cuts = [], cutInfo = [];
-  for (const rg of [outer, inner]) {
-    for (let i = 0; i < n; i++) {
-      const P1 = rg[i], P2 = rg[(i + 1) % n];
-      const seg = [P1[0], P1[1], P2[0], P2[1]];
-      cuts.push(seg);
-      cutInfo.push({ seg, face: rg === outer ? 0 : 1, partner: -1, noTab: true });
-    }
-  }
+  // Outer edge and opening are separate closed polygons on the cuts layer.
+  const cutPaths = [outer.map((p) => p.slice()), inner.map((p) => p.slice())];
   // Rabbet reference line (dashed) — the glass/backing size.
   const polys = [outer, inner];
   const folds = [];
@@ -1544,7 +1540,7 @@ function framePaperNet(n, A, W, R = 0) {
     x0 = Math.min(x0, px); y0 = Math.min(y0, py);
     x1 = Math.max(x1, px); y1 = Math.max(y1, py);
   }
-  return { polys, folds, cuts, cutInfo, pieces: 1,
+  return { polys, folds, cuts: [], cutPaths, cutInfo: [], pieces: 1,
            bbox: { x0, y0, x1, y1 },
            dims: { A, W: w, innerSide: A * k, clamped: w !== W,
                    rabbet: r, rabbetClamped: R > 0 && r !== R, rabbetSide } };
@@ -1576,10 +1572,21 @@ function paperSVG(net, R, title) {
   const h = f(net.bbox.y1) - f(net.bbox.y0) + 2 * m;
   const path = (segs) =>
     segs.map((s) => `M${f(s[0])} ${f(s[1])}L${f(s[2])} ${f(s[3])}`).join("");
-  // Closed piece outlines (net.cutPaths) become one continuous subpath each,
-  // so cutters treat every piece as a single closed polygon.
-  const closed = (net.cutPaths ?? []).map((pl) =>
-    "M" + pl.map((p) => `${f(p[0])} ${f(p[1])}`).join("L") + "Z").join("");
+  // Each closed piece outline (net.cutPaths) becomes its OWN <polygon>
+  // element, so selection tools and cutters see the pieces as separate
+  // objects. Segment cuts (geodesic nets) stay as one path.
+  const cutEls =
+    (net.cuts.length
+      ? `<path d="${path(net.cuts)}" fill="none" stroke="#d32f2f" stroke-width="0.25"/>\n`
+      : "") +
+    (net.cutPaths ?? []).map((pl, i) =>
+      `<polygon id="piece-${i + 1}" points="` +
+      pl.map((p) => `${f(p[0])},${f(p[1])}`).join(" ") +
+      `" fill="none" stroke="#d32f2f" stroke-width="0.25"/>`).join("\n");
+  // Score lines grouped per piece when the net provides groups.
+  const scoreEls = (net.foldGroups ?? [net.folds]).map((g, i) =>
+    `<path id="scores-piece-${i + 1}" d="${path(g)}" fill="none" ` +
+    `stroke="#1565c0" stroke-width="0.25" stroke-dasharray="1.5 1.5"/>`).join("\n");
   return `<svg xmlns="http://www.w3.org/2000/svg" ` +
     `xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" ` +
     `viewBox="${x0} ${y0} ${w} ${h}" ` +
@@ -1587,12 +1594,9 @@ function paperSVG(net, R, title) {
     `<desc>${title} — MiterPal paper net. Layer "cuts" (solid red) = cut, ` +
     `layer "scores" (dashed blue) = fold/score.</desc>\n` +
     `<g id="scores" inkscape:groupmode="layer" inkscape:label="scores">\n` +
-    `<path d="${path(net.folds)}" fill="none" stroke="#1565c0" ` +
-    `stroke-width="0.25" stroke-dasharray="1.5 1.5"/>\n` +
-    `</g>\n` +
+    scoreEls + `\n</g>\n` +
     `<g id="cuts" inkscape:groupmode="layer" inkscape:label="cuts">\n` +
-    `<path d="${path(net.cuts) + closed}" fill="none" stroke="#d32f2f" stroke-width="0.25"/>\n` +
-    `</g>\n` +
+    cutEls + `\n</g>\n` +
     `</svg>\n`;
 }
 
