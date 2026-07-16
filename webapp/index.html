@@ -314,6 +314,12 @@
       <input type="number" id="tabPct" min="2" max="50" step="1">
       <span>% of edge</span>
     </label>
+    <div class="scope-row" id="bottomRow" hidden>
+      <div class="seg" id="bottomSeg">
+        <button data-v="base">Bottom at base</button>
+        <button data-v="rim">Rim-locked</button>
+      </div>
+    </div>
     <button id="geoSvgBtn" hidden>Download SVG</button>
   </div>
 
@@ -1348,7 +1354,7 @@ function boxPaperNet(n, sideAngleDeg, A, H) {
 // themselves to stiffen the rim; the base gets a tab on every edge. With
 // tabs off both pieces are bare outlines, for users who add their own tabs
 // in other tools or use a different construction.
-function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
+function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10, bottom = "base") {
   const alpha = Math.PI / n;
   const e = H * Math.sin(sideAngleDeg * DEG) * Math.tan(alpha);
   const leg = Math.hypot(H, e);
@@ -1356,14 +1362,15 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
   const pct = clamp(tabPct, 1, 50) / 100;
 
   // Tab corners for edge P→Q, pointing away from `inside`. Depth is pct of
-  // this edge's own length (capped so shoulders stay sane).
-  const tabCorners = (P, Q, inside, depthCap) => {
+  // this edge's own length (capped so shoulders stay sane) unless an
+  // explicit depth is given.
+  const tabCorners = (P, Q, inside, depthCap, depth) => {
     const len = Math.hypot(Q[0] - P[0], Q[1] - P[1]);
     const ux = (Q[0] - P[0]) / len, uy = (Q[1] - P[1]) / len;
     let nx = -uy, ny = ux;
     const mx = (P[0] + Q[0]) / 2, my = (P[1] + Q[1]) / 2;
     if ((mx - inside[0]) * nx + (my - inside[1]) * ny < 0) { nx = -nx; ny = -ny; }
-    const d = Math.min(pct * len, 0.45 * len, depthCap ?? Infinity);
+    const d = Math.min(depth ?? pct * len, 0.45 * len, depthCap ?? Infinity);
     const inset = Math.min(d * 0.577, 0.3 * len);
     return [[P[0] + nx * d + ux * inset, P[1] + ny * d + uy * inset],
             [Q[0] + nx * d - ux * inset, Q[1] + ny * d - uy * inset]];
@@ -1453,10 +1460,22 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
     folds.push([w[1][0], w[1][1], w[2][0], w[2][1]]);
   }
 
-  // ---- Base: N-gon outline, tab on every edge when tabs are on ----
+  // ---- Bottom panel: N-gon outline, tab on every edge when tabs are on.
+  // "base" mode: sized to the bottom polygon (side A), installs at the base.
+  // "rim" mode (rim-locked, needs tabs): the panel drops in from the open
+  // face and sits one tab-depth below the rim, so it's sized to the box's
+  // cross-section there; its tabs are cut to exactly the rim-tab depth so
+  // they stand up to the rim and the walls' fold-back rim tabs fold over
+  // them — wall + panel tab + rim tab, a three-layer rim.
+  const dTop = Math.min(pct * B, 0.45 * B);
+  const rim = tabs && bottom === "rim";
+  const bottomSide = rim
+    ? Math.max(A + 2 * (H - dTop) * Math.sin(sideAngleDeg * DEG) * Math.tan(alpha),
+               0.2 * A)
+    : A;
   const rot = n % 2 === 0 ? Math.PI / n : 0;
-  const Rc = A / (2 * Math.sin(alpha));
-  const apothem = A / (2 * Math.tan(alpha));
+  const Rc = bottomSide / (2 * Math.sin(alpha));
+  const apothem = bottomSide / (2 * Math.tan(alpha));
   const bverts = [];
   for (let i = 0; i < n; i++) {
     const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
@@ -1467,12 +1486,15 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
     const P = bverts[i], Q = bverts[(i + 1) % n];
     base.push(P.slice());
     if (tabs) {
-      base.push(...tabCorners(P, Q, [0, 0], 0.8 * apothem));
+      base.push(...tabCorners(P, Q, [0, 0], 0.8 * apothem, rim ? dTop : undefined));
       bfolds.push([P[0], P[1], Q[0], Q[1]]);
     }
   }
 
-  // Stack the base under the band, centred.
+  // Nest the base into the empty pocket of the band's curve (up and to the
+  // left) so the sheet stays landscape-friendly: grid-search placements,
+  // keep any that don't collide with the band (with clearance), and pick
+  // the one minimising overall height, then width, biased up-left.
   const bbOf = (pts) => {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const [px, py] of pts) {
@@ -1482,9 +1504,67 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
     return { x0, y0, x1, y1 };
   };
   const bandB = bbOf(band), baseB = bbOf(base);
+  const pad = 0.08 * Math.max(A, H);
+
+  const segDist2 = (a, b, c, d) => {
+    // min distance^2 between segments ab and cd
+    const clamp01 = (t) => t < 0 ? 0 : t > 1 ? 1 : t;
+    const pt = (P, Q, t) => [P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t];
+    const d2p = (P, A2, B2) => {
+      const vx = B2[0] - A2[0], vy = B2[1] - A2[1];
+      const L2 = vx * vx + vy * vy || 1e-12;
+      const t = clamp01(((P[0] - A2[0]) * vx + (P[1] - A2[1]) * vy) / L2);
+      const q = pt(A2, B2, t);
+      return (P[0] - q[0]) ** 2 + (P[1] - q[1]) ** 2;
+    };
+    const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+    if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) return 0;
+    return Math.min(d2p(a, c, d), d2p(b, c, d), d2p(c, a, b), d2p(d, a, b));
+  };
+  const inside = (P, poly) => { // ray cast
+    let hit = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const [xi, yi] = poly[i], [xj, yj] = poly[j];
+      if ((yi > P[1]) !== (yj > P[1]) &&
+          P[0] < (xj - xi) * (P[1] - yi) / (yj - yi) + xi) hit = !hit;
+    }
+    return hit;
+  };
+  const collides = (off) => {
+    const q = base.map(([x, y]) => [x + off[0], y + off[1]]);
+    if (inside(q[0], band) || inside(band[0], q)) return true;
+    const p2 = pad * pad;
+    for (let i = 0; i < q.length; i++) {
+      const q1 = q[i], q2r = q[(i + 1) % q.length];
+      for (let j = 0; j < band.length; j++) {
+        if (segDist2(q1, q2r, band[j], band[(j + 1) % band.length]) < p2) return true;
+      }
+    }
+    return false;
+  };
+
+  const baseW = baseB.x1 - baseB.x0, baseH = baseB.y1 - baseB.y0;
+  const step = Math.max(bandB.x1 - bandB.x0, bandB.y1 - bandB.y0) / 30;
+  let best = null;
+  for (let y = bandB.y0 - baseH - pad; y <= bandB.y1 + pad; y += step) {
+    for (let x = bandB.x0 - baseW - pad; x <= bandB.x1 + pad; x += step) {
+      const off = [x - baseB.x0, y - baseB.y0];
+      if (collides(off)) continue;
+      const ux0 = Math.min(bandB.x0, x), ux1 = Math.max(bandB.x1, x + baseW);
+      const uy0 = Math.min(bandB.y0, y), uy1 = Math.max(bandB.y1, y + baseH);
+      const key = [uy1 - uy0, ux1 - ux0, y, x];
+      if (!best || key[0] < best.key[0] - 1e-9 ||
+          (Math.abs(key[0] - best.key[0]) < 1e-9 && (key[1] < best.key[1] - 1e-9 ||
+          (Math.abs(key[1] - best.key[1]) < 1e-9 && (key[2] < best.key[2] - 1e-9 ||
+          (Math.abs(key[2] - best.key[2]) < 1e-9 && key[3] < best.key[3])))))) {
+        best = { off, key };
+      }
+    }
+  }
   const gap = 0.12 * Math.max(A, H);
-  const dx = (bandB.x0 + bandB.x1) / 2 - (baseB.x0 + baseB.x1) / 2;
-  const dy = bandB.y1 + gap - baseB.y0;
+  const dx = best ? best.off[0]
+    : (bandB.x0 + bandB.x1) / 2 - (baseB.x0 + baseB.x1) / 2;
+  const dy = best ? best.off[1] : bandB.y1 + gap - baseB.y0;
   const basePts = base.map(([x, y]) => [x + dx, y + dy]);
   const bandFolds = folds.slice();
   const baseFolds = bfolds.map((s) => [s[0] + dx, s[1] + dy, s[2] + dx, s[3] + dy]);
@@ -1495,7 +1575,8 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
   return { polys: cutPaths, folds: bandFolds.concat(baseFolds),
            foldGroups: [bandFolds, baseFolds],
            cuts: [], cutPaths, cutInfo: [], pieces: 2,
-           bbox: bb, dims: { A, B, leg, H, tabs, tabPct: pct * 100 } };
+           bbox: bb, dims: { A, B, leg, H, tabs, tabPct: pct * 100,
+                             bottom: rim ? "rim" : "base", bottomSide } };
 }
 
 // Optional rabbet (rebate) R: the recess on the back of the frame where the
@@ -1658,6 +1739,7 @@ const state = {
   dimRabbet: 0,        // paper: picture frame rabbet (0 = none)
   boxTabs: true,       // box paper: generate tabs (off = bare outlines)
   tabPct: 10,          // box paper: tab depth as % of the edge it extends
+  boxBottom: "base",   // box paper: bottom at base, or rim-locked
   ...store.load("miterpal.settings", {}),   // advanced, exact, theme
   advanced: store.load("miterpal.settings", {}).advanced ?? false,
   exact: store.load("miterpal.settings", {}).exact ?? false,
@@ -1682,7 +1764,7 @@ const els = {
   geoCard: $("geoCard"), geoTable: $("geoTable"), geoHint: $("geoHint"),
   geoSvgBtn: $("geoSvgBtn"), geoScopeRow: $("geoScopeRow"),
   geoTabsRow: $("geoTabsRow"), geoTabsChk: $("geoTabsChk"),
-  tabPctRow: $("tabPctRow"), tabPct: $("tabPct"),
+  tabPctRow: $("tabPctRow"), tabPct: $("tabPct"), bottomRow: $("bottomRow"),
   woodChecklist: $("woodChecklist"), paperChecklist: $("paperChecklist"),
   outCard: $("outCard"), dimCard: $("dimCard"),
   dimA: $("dimA"), dimB: $("dimB"), dimBLabel: $("dimBLabel"),
@@ -1760,6 +1842,7 @@ function render() {
     els.geoScopeRow.hidden = true;
     els.geoTabsRow.hidden = true;
     els.tabPctRow.hidden = true;
+    els.bottomRow.hidden = true;
   }
 
   if (bit && !r.feasible) {
@@ -1824,7 +1907,7 @@ function renderBoxPaper(frame, r) {
   const net = frame
     ? framePaperNet(n, state.dimA, state.dimW, state.dimRabbet)
     : boxBandNet(n, state.sideAngle, state.dimA, state.dimH,
-                 state.boxTabs, state.tabPct);
+                 state.boxTabs, state.tabPct, state.boxBottom);
 
   els.results.innerHTML = frame
     ? card(1, "One piece") + card(n, "Sides")
@@ -1836,6 +1919,9 @@ function renderBoxPaper(frame, r) {
   els.geoTabsChk.checked = state.boxTabs;
   els.tabPctRow.hidden = frame || !state.boxTabs;
   if (document.activeElement !== els.tabPct) els.tabPct.value = state.tabPct;
+  els.bottomRow.hidden = frame || !state.boxTabs; // rim lock needs both tab sets
+  document.querySelectorAll("#bottomSeg button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.v === state.boxBottom));
   els.geoSvgBtn.hidden = false;
   els.geoSvgBtn.textContent =
     frame ? "Download SVG — frame template" : "Download SVG — fold-up box";
@@ -1851,7 +1937,10 @@ function renderBoxPaper(frame, r) {
           : "")
       : `<tr><td>Base edge</td><td>${n}</td><td>${formatLen(d.A, state.exact)}</td></tr>` +
         `<tr><td>Wall top</td><td>${n}</td><td>${formatLen(d.B, state.exact)}</td></tr>` +
-        `<tr><td>Wall side</td><td>${n + 1}</td><td>${formatLen(d.leg, state.exact)}</td></tr>`);
+        `<tr><td>Wall side</td><td>${n + 1}</td><td>${formatLen(d.leg, state.exact)}</td></tr>` +
+        (d.bottom === "rim"
+          ? `<tr><td>Bottom panel edge</td><td>${n}</td><td>${formatLen(d.bottomSide, state.exact)}</td></tr>`
+          : ""));
 
   els.geoHint.innerHTML = frame
     ? `Flat frame template — the outer ${n}-gon with the opening cut out, ` +
@@ -1870,10 +1959,17 @@ function renderBoxPaper(frame, r) {
       " The SVG has separate “cuts” and “scores” (rabbet) layers, " +
       "sized in millimetres (1 unit = 1 mm)."
     : `Zero-thickness fold-up box, two closed cut outlines: the ${n} walls ` +
-      "in one connected band (fold at each corner) and a separate base. " +
+      "in one connected band (fold at each corner) and a separate bottom. " +
       (state.boxTabs
-        ? `Tabs are ${fmtInput(state.tabPct)}% of their edge: one closes the ` +
-          "band, wall-bottom tabs double the base's edge tabs as " +
+        ? (d.bottom === "rim"
+            ? `Rim-locked bottom: the panel drops in from the open face and ` +
+              "sits one tab-depth below the rim — its tabs stand up the " +
+              "walls and the fold-back rim tabs fold over them (wall + " +
+              "panel tab + rim tab: a three-layer rim). Use the box " +
+              "rim-side down. "
+            : "") +
+          `Tabs are ${fmtInput(state.tabPct)}% of their edge: one closes the ` +
+          "band, wall-bottom tabs double the bottom's edge tabs as " +
           "reinforcement, and wall-top tabs fold back on themselves to " +
           "stiffen the rim. "
         : "No tabs — bare outlines to tab up in your own tools or glue " +
@@ -1939,6 +2035,7 @@ function renderGeodesic() {
   els.geoTabsRow.hidden = !paper;
   els.geoTabsChk.checked = state.geoTabs;
   els.tabPctRow.hidden = true; // geodesic tabs stay collision-sized
+  els.bottomRow.hidden = true;
   document.querySelectorAll("#geoScopeSeg button").forEach((b) =>
     b.classList.toggle("on", b.dataset.v === state.geoScope));
   els.geoSvgBtn.textContent = module
@@ -2206,6 +2303,8 @@ els.tabPct.addEventListener("input", () => {
   if (!Number.isNaN(v)) { state.tabPct = clamp(v, 2, 50); render(); }
 });
 els.tabPct.addEventListener("blur", () => render());
+document.querySelectorAll("#bottomSeg button").forEach((b) =>
+  b.addEventListener("click", () => { state.boxBottom = b.dataset.v; render(); }));
 
 function saveSVG(net, scale, title, filename, message) {
   const blob = new Blob([paperSVG(net, scale, title)], { type: "image/svg+xml" });
@@ -2242,13 +2341,16 @@ els.geoSvgBtn.addEventListener("click", () => {
       "Frame template downloaded");
   } else {
     const net = boxBandNet(state.n, state.sideAngle, state.dimA, state.dimH,
-                           state.boxTabs, state.tabPct);
+                           state.boxTabs, state.tabPct, state.boxBottom);
+    const rim = net.dims.bottom === "rim";
     saveSVG(net, 1,
-      `${state.n}-sided fold-up box (band + base), A=${state.dimA}, ` +
+      `${state.n}-sided fold-up box (band + bottom), A=${state.dimA}, ` +
         `H=${state.dimH}, S=${state.sideAngle}°` +
-        (state.boxTabs ? `, tabs ${state.tabPct}%` : ", no tabs"),
+        (state.boxTabs ? `, tabs ${state.tabPct}%` : ", no tabs") +
+        (rim ? ", rim-locked bottom" : ""),
       `miterpal-box-N${state.n}-S${state.sideAngle}-A${state.dimA}` +
-        `-H${state.dimH}${state.boxTabs ? `-tabs${state.tabPct}` : "-notabs"}.svg`,
+        `-H${state.dimH}${state.boxTabs ? `-tabs${state.tabPct}` : "-notabs"}` +
+        `${rim ? "-rimlock" : ""}.svg`,
       "Fold-up box SVG downloaded");
   }
 });
@@ -2299,7 +2401,7 @@ $("saveOk").addEventListener("click", () => {
     geoBase: state.geoBase, geoSubdiv: state.geoSubdiv,
     geoRadius: state.geoRadius, geoCon: state.geoCon, geoScope: state.geoScope,
     geoTabs: state.geoTabs, boxOut: state.boxOut,
-    boxTabs: state.boxTabs, tabPct: state.tabPct,
+    boxTabs: state.boxTabs, tabPct: state.tabPct, boxBottom: state.boxBottom,
     dimA: state.dimA, dimH: state.dimH, dimW: state.dimW,
     dimRabbet: state.dimRabbet });
   persistProjects();
@@ -2352,6 +2454,7 @@ function renderProjects() {
       state.dimRabbet = clamp(p.dimRabbet ?? 0, 0, 1e6);
       state.boxTabs = p.boxTabs !== false;
       state.tabPct = clamp(p.tabPct ?? 10, 2, 50);
+      state.boxBottom = p.boxBottom === "rim" ? "rim" : "base";
       dlgProjects.close();
       render();
     });
