@@ -1328,6 +1328,109 @@ function boxPaperNet(n, sideAngleDeg, A, H) {
            bbox: { x0, y0, x1, y1 }, dims: { A, B: A + 2 * e, leg, H } };
 }
 
+// Wrap-around box net: the N walls in one connected band (fold at each
+// corner), closed by a single end tab, plus a SEPARATE base polygon with a
+// glue tab on every edge. Easier to assemble than the radial star unfold —
+// wrap the band into a ring, then drop it onto the tabbed base.
+function boxBandNet(n, sideAngleDeg, A, H) {
+  const alpha = Math.PI / n;
+  const e = H * Math.sin(sideAngleDeg * DEG) * Math.tan(alpha);
+  const leg = Math.hypot(H, e);
+  const B = A + 2 * e;
+
+  // A small trapezoidal glue tab on segment P1→P2, pointing away from `inside`.
+  const trapTab = (P1, P2, depth, inside) => {
+    const len = Math.hypot(P2[0] - P1[0], P2[1] - P1[1]);
+    const ux = (P2[0] - P1[0]) / len, uy = (P2[1] - P1[1]) / len;
+    let nx = -uy, ny = ux;
+    const mx = (P1[0] + P2[0]) / 2, my = (P1[1] + P2[1]) / 2;
+    if ((mx - inside[0]) * nx + (my - inside[1]) * ny < 0) { nx = -nx; ny = -ny; }
+    const d = Math.min(depth, 0.45 * len);
+    const inset = Math.min(d * 0.577, 0.4 * len);
+    return [P1, [P1[0] + nx * d + ux * inset, P1[1] + ny * d + uy * inset],
+            [P2[0] + nx * d - ux * inset, P2[1] + ny * d - uy * inset], P2];
+  };
+  const tabCuts = (tab, out) => {
+    for (let i = 0; i < 3; i++) out.push([tab[i][0], tab[i][1], tab[i + 1][0], tab[i + 1][1]]);
+  };
+
+  // ---- Band: place congruent trapezoid walls leg-to-leg ----
+  // Local wall corners: bottom-left, bottom-right, top-right, top-left.
+  const local = [[0, 0], [A, 0], [A + e, H], [-e, H]];
+  const walls = [local.map((p) => p.slice())];
+  for (let k = 1; k < n; k++) {
+    const prev = walls[k - 1];
+    const BL = prev[1], TL = prev[2];            // new wall hinges on prev's right leg
+    const ux = -e, uy = H, lu2 = leg * leg;      // local left-leg vector
+    const vx = TL[0] - BL[0], vy = TL[1] - BL[1];
+    const cos = (vx * ux + vy * uy) / lu2, sin = (vy * ux - vx * uy) / lu2;
+    const map = ([x, y]) => [BL[0] + cos * x - sin * y, BL[1] + sin * x + cos * y];
+    walls.push(local.map(map));
+  }
+
+  const polys = walls.map((w) => w.map((p) => p.slice()));
+  const folds = [], cuts = [];
+  walls.forEach((w, k) => {
+    cuts.push([w[0][0], w[0][1], w[1][0], w[1][1]]); // bottom edge
+    cuts.push([w[3][0], w[3][1], w[2][0], w[2][1]]); // top edge
+    if (k < n - 1) folds.push([w[1][0], w[1][1], w[2][0], w[2][1]]); // shared corner
+  });
+  cuts.push([walls[0][0][0], walls[0][0][1], walls[0][3][0], walls[0][3][1]]); // free start leg
+  // Single closing tab on the last wall's right leg.
+  const last = walls[n - 1];
+  const bandMid = [walls[Math.floor(n / 2)][0][0], walls[Math.floor(n / 2)][0][1]];
+  const endTab = trapTab(last[1], last[2], Math.min(0.5 * leg, 0.4 * A), bandMid);
+  folds.push([last[1][0], last[1][1], last[2][0], last[2][1]]);
+  tabCuts(endTab, cuts);
+  polys.push(endTab);
+
+  // ---- Base: N-gon with a glue tab on every edge, placed below the band ----
+  const rot = n % 2 === 0 ? Math.PI / n : 0;
+  const Rc = A / (2 * Math.sin(alpha));
+  const apothem = A / (2 * Math.tan(alpha));
+  const bverts = [];
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
+    bverts.push([Rc * Math.cos(a), Rc * Math.sin(a)]);
+  }
+  const baseTabD = Math.min(0.35 * A, 0.8 * apothem);
+  const bfolds = [], bcuts = [], bpolys = [bverts.map((v) => v.slice())];
+  for (let i = 0; i < n; i++) {
+    const P1 = bverts[i], P2 = bverts[(i + 1) % n];
+    bfolds.push([P1[0], P1[1], P2[0], P2[1]]);
+    const tab = trapTab(P1, P2, baseTabD, [0, 0]);
+    tabCuts(tab, bcuts);
+    bpolys.push(tab);
+  }
+
+  // Stack the base under the band, centred.
+  const bbOf = (segsArr, polyArr) => {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const p of polyArr) for (const [px, py] of p) {
+      x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+      x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+    }
+    return { x0, y0, x1, y1 };
+  };
+  const bandB = bbOf(null, polys), baseB = bbOf(null, bpolys);
+  const gap = 0.12 * Math.max(A, H);
+  const dx = (bandB.x0 + bandB.x1) / 2 - (baseB.x0 + baseB.x1) / 2;
+  const dy = bandB.y1 + gap - baseB.y0;
+  const shiftSeg = (s) => [s[0] + dx, s[1] + dy, s[2] + dx, s[3] + dy];
+  const shiftPoly = (p) => p.map(([x, y]) => [x + dx, y + dy]);
+  for (const s of bfolds) folds.push(shiftSeg(s));
+  for (const s of bcuts) cuts.push(shiftSeg(s));
+  for (const p of bpolys) polys.push(shiftPoly(p));
+
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of polys) for (const [px, py] of p) {
+    x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+    x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+  }
+  return { polys, folds, cuts, cutInfo: [], pieces: 2,
+           bbox: { x0, y0, x1, y1 }, dims: { A, B, leg, H } };
+}
+
 // Optional rabbet (rebate) R: the recess on the back of the frame where the
 // glass/backing sits. It extends outward from the visible opening by R, so
 // the glass edge — drawn as a dashed reference line — sits at apothem
@@ -1642,25 +1745,22 @@ function renderBoxPaper(frame, r) {
   const n = state.n;
   updateDimInputs(frame, true);
 
-  const net0 = frame
+  const net = frame
     ? framePaperNet(n, state.dimA, state.dimW, state.dimRabbet)
-    : boxPaperNet(n, state.sideAngle, state.dimA, state.dimH);
-  const tabs = !frame && state.geoTabs;
-  const net = tabs ? applyTabs(net0) : net0;
+    : boxBandNet(n, state.sideAngle, state.dimA, state.dimH);
 
   els.results.innerHTML = frame
     ? card(1, "One piece") + card(n, "Sides")
-    : card(n + 1, "Panels") + card(n, "Corner joints");
+    : card(2, "Pieces") + card(n, "Walls");
   els.leanBanner.hidden = true;
   els.advanced.hidden = true;
   els.geoScopeRow.hidden = true;
-  els.geoTabsRow.hidden = frame;
-  els.geoTabsChk.checked = state.geoTabs;
+  els.geoTabsRow.hidden = true; // box tabs are structural; frame has none
   els.geoSvgBtn.hidden = false;
   els.geoSvgBtn.textContent =
     frame ? "Download SVG — frame template" : "Download SVG — fold-up box";
 
-  const d = net.dims ?? net0.dims;
+  const d = net.dims;
   els.geoTable.innerHTML =
     `<tr><th>Edge</th><th>Qty</th><th>Length</th></tr>` +
     (frame
@@ -1669,9 +1769,9 @@ function renderBoxPaper(frame, r) {
         (d.rabbet > 0
           ? `<tr><td>Rabbet (glass)</td><td>${n}</td><td>${formatLen(d.rabbetSide, state.exact)}</td></tr>`
           : "")
-      : `<tr><td>Base (fold)</td><td>${n}</td><td>${formatLen(d.A, state.exact)}</td></tr>` +
+      : `<tr><td>Base edge</td><td>${n}</td><td>${formatLen(d.A, state.exact)}</td></tr>` +
         `<tr><td>Wall top</td><td>${n}</td><td>${formatLen(d.B, state.exact)}</td></tr>` +
-        `<tr><td>Wall side</td><td>${2 * n}</td><td>${formatLen(d.leg, state.exact)}</td></tr>`);
+        `<tr><td>Wall side</td><td>${n + 1}</td><td>${formatLen(d.leg, state.exact)}</td></tr>`);
 
   els.geoHint.innerHTML = frame
     ? `Flat frame template — the outer ${n}-gon with the opening cut out, ` +
@@ -1689,14 +1789,11 @@ function renderBoxPaper(frame, r) {
         : "") +
       " The SVG has separate “cuts” and “scores” (rabbet) layers, " +
       "sized in millimetres (1 unit = 1 mm)."
-    : `Zero-thickness fold-up box: the ${n}-gon base with its walls unfolded ` +
-      "flat. Dashed base edges are fold scores; walls " +
+    : `Zero-thickness fold-up box in two pieces: the ${n} walls in one ` +
+      "connected band (fold at each corner, one tab closes the ring), and a " +
+      "separate base with a glue tab on every edge. Walls " +
       (state.sideAngle > 0 ? "flare outward" :
        state.sideAngle < 0 ? "taper inward" : "stand upright") +
-      (tabs
-        ? `; glue tabs on ${net.tabs} of ${net.joints} corner joints` +
-          (net.skippedTabs > 0 ? ` (no room on ${net.skippedTabs})` : "")
-        : "") +
       ". At paper thickness the mitered and butt-joint boxes are the same " +
       "shape. The SVG has separate “cuts” and “scores” layers, " +
       "sized in millimetres (1 unit = 1 mm).";
@@ -1704,7 +1801,7 @@ function renderBoxPaper(frame, r) {
   els.leanFigure.hidden = true;
   els.topCaption.textContent = frame
     ? `${n}-sided frame template`
-    : `${n}-sided box — unfolded (S = ${fmtInput(state.sideAngle)}°)`;
+    : `${n}-sided box — band + base (S = ${fmtInput(state.sideAngle)}°)`;
   drawNetView(net);
 }
 
@@ -2040,13 +2137,12 @@ els.geoSvgBtn.addEventListener("click", () => {
         `${net.dims.rabbet > 0 ? `-rabbet${net.dims.rabbet}` : ""}.svg`,
       "Frame template downloaded");
   } else {
-    const net0 = boxPaperNet(state.n, state.sideAngle, state.dimA, state.dimH);
-    const net = state.geoTabs ? applyTabs(net0) : net0;
+    const net = boxBandNet(state.n, state.sideAngle, state.dimA, state.dimH);
     saveSVG(net, 1,
-      `${state.n}-sided fold-up box, A=${state.dimA}, H=${state.dimH}, ` +
-        `S=${state.sideAngle}°`,
+      `${state.n}-sided fold-up box (band + base), A=${state.dimA}, ` +
+        `H=${state.dimH}, S=${state.sideAngle}°`,
       `miterpal-box-N${state.n}-S${state.sideAngle}-A${state.dimA}` +
-        `-H${state.dimH}${state.geoTabs ? "-tabs" : ""}.svg`,
+        `-H${state.dimH}.svg`,
       "Fold-up box SVG downloaded");
   }
 });
@@ -2210,7 +2306,7 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 // Expose the math for testing (node --experimental-default-type=module not
 // needed; tests read this file and eval the script block).
 if (typeof module !== "undefined") {
-  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs, boxPaperNet, framePaperNet };
+  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs, boxPaperNet, boxBandNet, framePaperNet };
 }
 </script>
 </body>
