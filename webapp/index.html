@@ -1407,10 +1407,13 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
     folds.push([last[1][0], last[1][1], last[2][0], last[2][1]]);
   }
   band.push(last[2].slice());
-  // Top (rim) tabs: their sides continue the wall legs beyond the top edge,
-  // so the darts between adjacent tabs sit at the same angle as the corner
-  // folds. Folded back, each tab's seam lands exactly on the corner fold
-  // below and neighbouring tabs meet in a plain slit.
+  // Top (rim) tabs: each side is the MIRROR of its corner fold across the
+  // wall's own top edge, so when the tab folds back on itself the cut edge
+  // lands exactly on the corner fold beneath it. At each interior corner
+  // the two mirrored sides open a V cutout that is symmetric about the
+  // fold-line extension — equal dart angles on both sides. (Upright walls
+  // degenerate to a slit; inward-sloped walls would overlap, so the side
+  // is clamped to the fold extension there.)
   const topTabCorners = (k) => {
     const w = walls[k];
     const d = Math.min(pct * B, 0.45 * B);
@@ -1421,13 +1424,21 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10) {
     const c = wallCenter(k);
     const mx = (w[2][0] + w[3][0]) / 2, my = (w[2][1] + w[3][1]) / 2;
     if ((mx - c[0]) * nx + (my - c[1]) * ny < 0) { nx = -nx; ny = -ny; }
-    // right side continues the right leg, left side the left leg
-    const ext = (P, L0) => {
-      const lx = (P[0] - L0[0]) / leg, ly = (P[1] - L0[1]) / leg;
-      const s = d / (lx * nx + ly * ny);
-      return [P[0] + lx * s, P[1] + ly * s];
+    const side = (P, L0, tx, ty) => {
+      // crease direction, from the top corner down the leg
+      const mxx = (L0[0] - P[0]) / leg, myy = (L0[1] - P[1]) / leg;
+      // mirror it across the top edge (unit direction tx,ty)
+      const dot = mxx * tx + myy * ty;
+      let rx = 2 * dot * tx - mxx, ry = 2 * dot * ty - myy;
+      // don't cross past the fold extension into the neighbour's tab
+      const exx = -mxx, eyy = -myy; // fold extension
+      const wallSide = Math.sign(exx * ty - eyy * tx);
+      if (Math.sign(exx * ry - eyy * rx) === -wallSide) { rx = exx; ry = eyy; }
+      const s = d / (rx * nx + ry * ny);
+      return [P[0] + rx * s, P[1] + ry * s];
     };
-    return [ext(w[2], w[1]), ext(w[3], w[0])];
+    return [side(w[2], w[1], (w[3][0] - w[2][0]) / el, (w[3][1] - w[2][1]) / el),
+            side(w[3], w[0], (w[2][0] - w[3][0]) / el, (w[2][1] - w[3][1]) / el)];
   };
   for (let k = n - 1; k >= 0; k--) {               // tops, right → left
     const w = walls[k];
