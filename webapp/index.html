@@ -1462,15 +1462,16 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10, bottom = "b
 
   // ---- Bottom panel: N-gon outline, tab on every edge when tabs are on.
   // "base" mode: sized to the bottom polygon (side A), installs at the base.
-  // "rim" mode (rim-locked, needs tabs): the panel drops in from the open
-  // face and sits one tab-depth below the rim, so it's sized to the box's
-  // cross-section there; its tabs are cut to exactly the rim-tab depth so
-  // they stand up to the rim and the walls' fold-back rim tabs fold over
-  // them — wall + panel tab + rim tab, a three-layer rim.
-  const dTop = Math.min(pct * B, 0.45 * B);
+  // "rim" mode (rim-locked, needs tabs): the panel sits one tab-depth ABOVE
+  // the base, so it's sized to the box's cross-section there (slightly
+  // larger than A on splayed boxes); its tabs are cut to exactly the wall
+  // bottom-tab depth so they fold DOWN to the base edge, and the walls'
+  // bottom tabs fold up over them — wall + panel tab + wall tab, a
+  // three-layer bottom rim.
+  const dBot = Math.min(pct * A, 0.45 * A);
   const rim = tabs && bottom === "rim";
   const bottomSide = rim
-    ? Math.max(A + 2 * (H - dTop) * Math.sin(sideAngleDeg * DEG) * Math.tan(alpha),
+    ? Math.max(A + 2 * dBot * Math.sin(sideAngleDeg * DEG) * Math.tan(alpha),
                0.2 * A)
     : A;
   const rot = n % 2 === 0 ? Math.PI / n : 0;
@@ -1486,7 +1487,7 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10, bottom = "b
     const P = bverts[i], Q = bverts[(i + 1) % n];
     base.push(P.slice());
     if (tabs) {
-      base.push(...tabCorners(P, Q, [0, 0], 0.8 * apothem, rim ? dTop : undefined));
+      base.push(...tabCorners(P, Q, [0, 0], 0.8 * apothem, rim ? dBot : undefined));
       bfolds.push([P[0], P[1], Q[0], Q[1]]);
     }
   }
@@ -1962,11 +1963,10 @@ function renderBoxPaper(frame, r) {
       "in one connected band (fold at each corner) and a separate bottom. " +
       (state.boxTabs
         ? (d.bottom === "rim"
-            ? `Rim-locked bottom: the panel drops in from the open face and ` +
-              "sits one tab-depth below the rim — its tabs stand up the " +
-              "walls and the fold-back rim tabs fold over them (wall + " +
-              "panel tab + rim tab: a three-layer rim). Use the box " +
-              "rim-side down. "
+            ? `Rim-locked bottom: the panel sits one tab-depth above the ` +
+              "base — its tabs fold down to the base edge and the walls' " +
+              "bottom tabs fold up over them (wall + panel tab + wall tab: " +
+              "a three-layer bottom rim). "
             : "") +
           `Tabs are ${fmtInput(state.tabPct)}% of their edge: one closes the ` +
           "band, wall-bottom tabs double the bottom's edge tabs as " +
