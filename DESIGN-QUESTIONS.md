@@ -52,17 +52,15 @@ we'll refine these live.
    even gluing. Tab outlines join the *cuts* layer; the tab's fold line
    joins *scores*.
 
-2. **3D part output for the box/frame modes.** Beyond cut lists: emit each
-   part (stave, frame side) as a solid model with the bevels/miters applied.
-   Two candidate formats: **OpenSCAD code** (easy — it's just text; a module
-   per part with `N`, `S`, board width/thickness as parameters, plus an
-   assembled-view preview; users can tweak and re-render) and **.step**
-   (harder — no practical in-browser STEP writer; would likely mean a
-   server-side or CLI companion, or settling for STL/3MF which are easy to
-   write from triangles). Suggested order: OpenSCAD first, then evaluate
-   whether STEP demand justifies the tooling. New inputs needed: board
-   thickness and width/height, since the calculator is currently
-   angles-only.
+2. **3D part output for the box/frame modes.** ✅ *OpenSCAD output shipped
+   (2026-07): Picture Frame, Mitered Box, and Geodesic Sphere emit a
+   parametric `.scad` file (assembled model + one isolated part) with wall
+   thickness as a percentage of W / A / R. Butt Joint Box and Fixed Bevel
+   Bit are intentionally excluded — their geometry is covered by the other
+   modes.* Still open: **.step** (harder — no practical in-browser STEP
+   writer; would likely mean a server-side or CLI companion, or settling
+   for STL/3MF which are easy to write from triangles) — evaluate whether
+   STEP demand justifies the tooling.
 
 3. **Paper mode for the box/frame joint types.** Zero-thickness version of
    the picture frame / mitered box / butt-joint box: tilt and bevel angles

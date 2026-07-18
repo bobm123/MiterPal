@@ -167,7 +167,12 @@
   .setting .label { flex: 1; }
   .setting .label small { display: block; color: var(--text-dim); font-size: 12.5px; }
   .seg { display: flex; border: 1px solid var(--outline); border-radius: 20px; overflow: hidden; }
-  .seg button { border-radius: 0; padding: 7px 14px; font-size: 14px; }
+  .seg button { border-radius: 0; padding: 7px 14px; font-size: 14px; white-space: nowrap; }
+  /* Four-way segments get tight on narrow screens: shrink the buttons and
+     let the segment wrap onto its own line when it still doesn't fit. */
+  #geoConSeg { margin-left: auto; }
+  #geoConSeg button { padding: 7px 8px; font-size: 13px; }
+  .row:has(#geoConSeg) { flex-wrap: wrap; }
   .seg button.on { background: var(--primary-container); color: var(--on-primary-container); }
   /* Geodesic edge/strut table */
   .geo-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
@@ -179,7 +184,7 @@
   .geo-table th:first-child, .geo-table td:first-child { text-align: left; }
   .geo-table td:first-child { font-weight: 600; color: var(--primary); }
   .scope-row { display: flex; justify-content: center; margin-top: 12px; }
-  #tabPct {
+  #tabPct, #thickPct {
     background: var(--surface2); color: var(--text);
     border: 1px solid var(--outline); border-radius: 8px;
     font-size: 15px; padding: 5px 6px; width: 68px; text-align: right;
@@ -238,6 +243,7 @@
         <button data-v="panel">Panels</button>
         <button data-v="strut">Struts</button>
         <button data-v="paper">Paper</button>
+        <button data-v="scad">SCAD</button>
       </div>
     </div>
   </div>
@@ -269,6 +275,7 @@
       <div class="seg" id="boxOutSeg">
         <button data-v="saw">Saw settings</button>
         <button data-v="paper">Paper model</button>
+        <button data-v="scad" id="scadOutBtn">OpenSCAD</button>
       </div>
     </div>
   </div>
@@ -320,6 +327,11 @@
         <button data-v="rim">Rim-locked</button>
       </div>
     </div>
+    <label class="check scope-row" id="thickRow" hidden>
+      <span>Thickness</span>
+      <input type="number" id="thickPct" min="1" max="50" step="1">
+      <span id="thickRef">% of A</span>
+    </label>
     <button id="geoSvgBtn" hidden>Download SVG</button>
   </div>
 
@@ -583,22 +595,30 @@ function flatCube() {
   for (const x of [c, -c]) for (const y of [c, -c]) for (const z of [c, -c]) {
     verts.push([x, y, z]);
   }
+  const chord = 2 * c;
+  const cls = { label: "A", chord, dihedral: 90, bevel: 45, count: 12,
+                endCut: Math.asin(chord / 2) / DEG };
   const edgeList = [];
   for (let i = 0; i < 8; i++) {
     for (let j = i + 1; j < 8; j++) {
       const diff = (verts[i][0] !== verts[j][0]) + (verts[i][1] !== verts[j][1]) +
                    (verts[i][2] !== verts[j][2]);
-      if (diff === 1) edgeList.push({ i, j });
+      if (diff === 1) edgeList.push({ i, j, cls });
     }
   }
-  const chord = 2 * c;
+  // Square faces as vertex cycles (winding is normalized by consumers).
+  // Vertex index = 4·(x<0) + 2·(y<0) + (z<0) from the loops above.
+  const faces = [
+    [0, 1, 3, 2], [4, 5, 7, 6], // x = ±c
+    [0, 1, 5, 4], [2, 3, 7, 6], // y = ±c
+    [0, 2, 6, 4], [1, 3, 7, 5], // z = ±c
+  ];
   return {
     v: 8, e: 12, f: 6,
-    classes: [{ label: "A", chord, dihedral: 90, bevel: 45, count: 12,
-                endCut: Math.asin(chord / 2) / DEG }],
+    classes: [cls],
     panels: [{ combo: "A-A-A-A", count: 6 }],
     hubs: [{ count: 8, valence: 3, combo: "3A" }],
-    mesh: { verts, faces: [] },
+    mesh: { verts, faces },
     edgeList,
   };
 }
@@ -1682,6 +1702,200 @@ function paperSVG(net, R, title) {
     `</svg>\n`;
 }
 
+/* ---- OpenSCAD output ------------------------------------------------------
+   Fully parametric .scad text: the numbers from the app become variables at
+   the top of the file, and all geometry is derived in OpenSCAD, so the file
+   stays editable after download. Each generator shows the assembled object
+   plus one isolated part (cut out with a wedge through the miter planes,
+   which reproduces the true joint faces).                                  */
+function boxScad(n, sDeg, A, H, thickPct) {
+  return `// MiterPal - mitered N-sided stave box (solid model)
+// Assembled box at the origin; one stave shown alongside.
+// All parameters are live - edit and preview (F5).
+
+N = ${n};            // sides
+A = ${A};            // outside side length at the base
+H_face = ${H};       // wall height measured along the face
+S = ${sDeg};         // side lean from vertical (deg), + splays out
+thick_pct = ${thickPct}; // wall thickness, % of A
+
+t     = A * thick_pct / 100;
+alpha = 180 / N;
+Hv    = H_face * cos(S);            // vertical height
+a0    = A / (2 * tan(alpha));       // outside apothem at the base
+eps   = 0.01;
+
+// outside side length at height z, and inside side length (walls offset
+// inward by t measured perpendicular to the leaning face)
+function side_out(z) = A + 2 * z * tan(S) * tan(alpha);
+function side_in(z)  = 2 * (a0 + z * tan(S) - t / cos(S)) * tan(alpha);
+
+// regular N-gon of side s, one edge centred on -Y (flat edge down)
+module ngon(s) {
+  r = s / (2 * sin(alpha));
+  polygon([for (i = [0 : N - 1])
+    [r * cos(-90 - alpha + i * 360 / N), r * sin(-90 - alpha + i * 360 / N)]]);
+}
+
+module solid_outer()
+  linear_extrude(height = Hv, scale = side_out(Hv) / A) ngon(A);
+
+module cavity()
+  translate([0, 0, t])
+    linear_extrude(height = Hv - t + eps, scale = side_in(Hv) / side_in(t))
+      ngon(side_in(t));
+
+module box() difference() { solid_outer(); cavity(); }
+
+// sector wedge through the two miter planes of the -Y stave
+module wedge() {
+  RR = 10 * (a0 + Hv * abs(tan(S)) + A);
+  translate([0, 0, -eps]) linear_extrude(height = Hv + 2 * eps)
+    polygon([[0, 0],
+             [RR * cos(-90 - alpha), RR * sin(-90 - alpha)],
+             [RR * cos(-90 + alpha), RR * sin(-90 + alpha)]]);
+}
+
+module stave() intersection() { box(); wedge(); }
+
+box();
+translate([2.2 * A, a0, 0]) rotate([-(90 - S), 0, 0]) translate([0, a0, 0])
+  stave();   // laid roughly face-down; flip the rotate sign if it lands inverted
+`;
+}
+
+function frameScad(n, A, W, rab, thickPct) {
+  return `// MiterPal - flat mitered picture frame (solid model)
+// Assembled frame at the origin (back face up); one stick alongside.
+
+N = ${n};            // sides
+A = ${A};            // outside side length
+W = ${W};            // frame width (face)
+R_rab = ${rab};      // rabbet width (0 = none); recess depth is t/2
+thick_pct = ${thickPct}; // material thickness, % of W
+
+t     = W * thick_pct / 100;
+alpha = 180 / N;
+ap    = A / (2 * tan(alpha));       // outside apothem
+eps   = 0.01;
+in_side  = A * (ap - min(W, 0.95 * ap)) / ap;              // opening side
+rab_side = A * (ap - min(W, 0.95 * ap) + R_rab) / ap;      // rabbet (glass) side
+
+module ngon(s) {
+  r = s / (2 * sin(alpha));
+  polygon([for (i = [0 : N - 1])
+    [r * cos(-90 - alpha + i * 360 / N), r * sin(-90 - alpha + i * 360 / N)]]);
+}
+
+module frame() difference() {
+  linear_extrude(height = t) difference() { ngon(A); ngon(in_side); }
+  if (R_rab > 0)   // rabbet recess, cut into the back (top, as modelled)
+    translate([0, 0, t / 2]) linear_extrude(height = t / 2 + eps) ngon(rab_side);
+}
+
+module wedge() {
+  RR = 10 * A;
+  translate([0, 0, -eps]) linear_extrude(height = t + 2 * eps)
+    polygon([[0, 0],
+             [RR * cos(-90 - alpha), RR * sin(-90 - alpha)],
+             [RR * cos(-90 + alpha), RR * sin(-90 + alpha)]]);
+}
+
+module stick() intersection() { frame(); wedge(); } // true mitered ends
+
+frame();
+translate([1.6 * A, 0, 0]) stick();
+`;
+}
+
+function geoScad(base, subdiv, R, thickPct) {
+  const g = geodesic(base, subdiv);
+  const { verts, faces } = g.mesh;
+  // OpenSCAD wants each face's vertices clockwise seen from outside.
+  // Faces may be triangles or (flat cube / dodecahedron) larger polygons.
+  const scadFaces = faces.map((f) => {
+    const [a, b, c] = f.slice(0, 3).map((i) => verts[i]);
+    const nx = (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]);
+    const ny = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+    const nz = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    const cx = a[0] + b[0] + c[0], cy = a[1] + b[1] + c[1], cz = a[2] + b[2] + c[2];
+    const outwardCCW = nx * cx + ny * cy + nz * cz > 0;
+    return outwardCCW ? [...f].reverse() : [...f];
+  });
+  // one representative face per panel shape
+  const edgeOf = new Map();
+  for (const e of g.edgeList) {
+    edgeOf.set(Math.min(e.i, e.j) + "_" + Math.max(e.i, e.j), e);
+  }
+  const comboOf = (f) => f.map((_, k) =>
+    edgeOf.get(Math.min(f[k], f[(k + 1) % f.length]) + "_" +
+               Math.max(f[k], f[(k + 1) % f.length])).cls.label).sort().join("-");
+  const reps = g.panels.map((p) => {
+    for (let fi = 0; fi < faces.length; fi++) {
+      if (comboOf(faces[fi]) === p.combo) {
+        return { fi, combo: p.combo, count: p.count };
+      }
+    }
+    return null;
+  }).filter(Boolean);
+  const fmt = (v) => +v.toFixed(6);
+  return `// MiterPal - geodesic sphere shell (${GEO_BASE_LABELS[base]}, ` +
+`${subdiv} subdivision${subdiv === 1 ? "" : "s"})
+// Assembled shell at the origin; one flattened panel of each shape below,
+// with the quantity to make in the comment. Panel edge faces pass through
+// the sphere centre, which is exactly the glue bevel from the cut list.
+
+R = ${R};             // circumradius (centre to vertex)
+thick_pct = ${thickPct};  // panel thickness, % of R (radial)
+k_in = 1 - thick_pct / 100;
+
+pts = [
+${verts.map((v) => `  [${fmt(v[0])}, ${fmt(v[1])}, ${fmt(v[2])}]`).join(",\n")}
+];
+fcs = [
+${scadFaces.map((f) => `  [${f.join(", ")}]`).join(",\n")}
+];
+
+module shell() difference() {
+  scale(R)        polyhedron(points = pts, faces = fcs);
+  scale(R * k_in) polyhedron(points = pts, faces = fcs);
+}
+
+function vsum(v, i = 0) = i >= len(v) ? [0, 0, 0] : v[i] + vsum(v, i + 1);
+
+// a single panel: outer face polygon + the same polygon scaled inward;
+// side faces lie on planes through the centre (the glue bevels)
+module panel(f) {
+  m = len(f);
+  p = [for (i = f) R * pts[i], for (i = f) R * k_in * pts[i]];
+  // Bevelled sides are emitted as triangles: the side quads are planar only
+  // up to rounding, which CGAL sometimes rejects.
+  polyhedron(points = p, faces = concat(
+    [[for (k = [m - 1 : -1 : 0]) k]],              // outer face
+    [[for (k = [0 : m - 1]) m + k]],               // inner face
+    [for (k = [0 : m - 1]) [k, (k + 1) % m, m + (k + 1) % m]],
+    [for (k = [0 : m - 1]) [k, m + (k + 1) % m, m + k]]));
+}
+// lay a panel flat, outer face up
+module panel_flat(f) {
+  a = pts[f[0]]; b = pts[f[1]]; c = pts[f[2]];
+  nr = cross(b - a, c - a);
+  n = (nr * a > 0 ? 1 : -1) * nr / norm(nr);
+  cen = R * vsum([for (i = f) pts[i]]) / len(f);
+  ang = acos(n[2]);
+  axv = norm(cross(n, [0, 0, 1])) < 1e-9 ? [1, 0, 0] : cross(n, [0, 0, 1]);
+  translate([0, 0, R * (1 - k_in)]) rotate(a = ang, v = axv) translate(-cen)
+    panel(f);
+}
+
+shell();
+${reps.map((r2, i) =>
+`// panel type ${r2.combo} - make ${r2.count}
+translate([${fmt(1.6 + i * 1.3)} * R, -1.6 * R, 0]) panel_flat(fcs[${r2.fi}]);`
+).join("\n")}
+`;
+}
+
 function result(n, sideAngle, dihedral, bladeTilt, miter, feasible = true) {
   return {
     n, sideAngle, dihedral, bladeTilt, miter, feasible,
@@ -1741,6 +1955,7 @@ const state = {
   boxTabs: true,       // box paper: generate tabs (off = bare outlines)
   tabPct: 10,          // box paper: tab depth as % of the edge it extends
   boxBottom: "base",   // box paper: bottom at base, or rim-locked
+  thickPct: 10,        // OpenSCAD: wall thickness, % of A / W / R by mode
   ...store.load("miterpal.settings", {}),   // advanced, exact, theme
   advanced: store.load("miterpal.settings", {}).advanced ?? false,
   exact: store.load("miterpal.settings", {}).exact ?? false,
@@ -1766,6 +1981,8 @@ const els = {
   geoSvgBtn: $("geoSvgBtn"), geoScopeRow: $("geoScopeRow"),
   geoTabsRow: $("geoTabsRow"), geoTabsChk: $("geoTabsChk"),
   tabPctRow: $("tabPctRow"), tabPct: $("tabPct"), bottomRow: $("bottomRow"),
+  thickRow: $("thickRow"), thickPct: $("thickPct"), thickRef: $("thickRef"),
+  scadOutBtn: $("scadOutBtn"),
   woodChecklist: $("woodChecklist"), paperChecklist: $("paperChecklist"),
   outCard: $("outCard"), dimCard: $("dimCard"),
   dimA: $("dimA"), dimB: $("dimB"), dimBLabel: $("dimBLabel"),
@@ -1785,12 +2002,16 @@ function render() {
   const geo = state.mode === "geodesicSphere";
   els.mode.value = state.mode;
   const boxish = ["pictureFrame", "miteredBox", "buttJointBox"].includes(state.mode);
+  // Butt joint has no SCAD output (identical solid to the mitered box).
+  if (state.mode === "buttJointBox" && state.boxOut === "scad") state.boxOut = "saw";
+  els.scadOutBtn.hidden = state.mode === "buttJointBox";
   const boxPaper = boxish && state.boxOut === "paper";
-  const frameSaw = state.mode === "pictureFrame" && !boxPaper; // frame stick lengths
+  const boxScadOut = boxish && state.boxOut === "scad";
+  const frameSaw = state.mode === "pictureFrame" && !boxPaper && !boxScadOut;
   els.geoBaseCard.hidden = !geo;
-  els.geoCard.hidden = !(geo || boxPaper || frameSaw);
+  els.geoCard.hidden = !(geo || boxPaper || boxScadOut || frameSaw);
   els.outCard.hidden = !boxish;
-  els.dimCard.hidden = !(boxPaper || frameSaw);
+  els.dimCard.hidden = !(boxPaper || boxScadOut || frameSaw);
   // The workshop checklist only fits blade work; paper mode gets its own.
   const paperMode = (geo && state.geoCon === "paper") || boxPaper;
   els.woodChecklist.hidden = paperMode;
@@ -1818,6 +2039,7 @@ function render() {
     : "0 = upright · + splays out · − slopes in";
 
   if (boxPaper) { renderBoxPaper(frame, r); return; }
+  if (boxScadOut) { renderBoxScad(frame, r); return; }
 
   // Picture frame, saw mode: report the per-stick material lengths alongside
   // the miter. The three lengths are the frame's outer, opening, and rabbet
@@ -1844,6 +2066,7 @@ function render() {
     els.geoTabsRow.hidden = true;
     els.tabPctRow.hidden = true;
     els.bottomRow.hidden = true;
+    els.thickRow.hidden = true;
   }
 
   if (bit && !r.feasible) {
@@ -1921,6 +2144,7 @@ function renderBoxPaper(frame, r) {
   els.tabPctRow.hidden = frame || !state.boxTabs;
   if (document.activeElement !== els.tabPct) els.tabPct.value = state.tabPct;
   els.bottomRow.hidden = frame || !state.boxTabs; // rim lock needs both tab sets
+  els.thickRow.hidden = true;
   document.querySelectorAll("#bottomSeg button").forEach((b) =>
     b.classList.toggle("on", b.dataset.v === state.boxBottom));
   els.geoSvgBtn.hidden = false;
@@ -1988,6 +2212,63 @@ function renderBoxPaper(frame, r) {
   drawNetView(net);
 }
 
+/* ---- Box / frame OpenSCAD rendering ---------------------------------------- */
+function renderBoxScad(frame, r) {
+  const n = state.n;
+  updateDimInputs(frame, false);
+  const t = frame ? state.dimW * state.thickPct / 100
+                  : state.dimA * state.thickPct / 100;
+
+  els.results.innerHTML =
+    card(formatLen(t, state.exact), "Thickness") +
+    card(n, frame ? "Sticks" : "Staves");
+  els.leanBanner.hidden = true;
+  els.advanced.hidden = true;
+  els.geoScopeRow.hidden = true;
+  els.geoTabsRow.hidden = true;
+  els.tabPctRow.hidden = true;
+  els.bottomRow.hidden = true;
+  els.thickRow.hidden = false;
+  els.thickRef.textContent = frame ? "% of W" : "% of A";
+  if (document.activeElement !== els.thickPct) els.thickPct.value = state.thickPct;
+  els.geoSvgBtn.hidden = false;
+  els.geoSvgBtn.textContent = "Download OpenSCAD (.scad)";
+
+  const fd = frame
+    ? framePaperNet(n, state.dimA, state.dimW, state.dimRabbet).dims : null;
+  els.geoTable.innerHTML =
+    `<tr><th>Item</th><th></th><th>Size</th></tr>` +
+    (frame
+      ? `<tr><td>Outside</td><td></td><td>${formatLen(fd.A, state.exact)}</td></tr>` +
+        `<tr><td>Opening</td><td></td><td>${formatLen(fd.innerSide, state.exact)}</td></tr>` +
+        (fd.rabbet > 0
+          ? `<tr><td>Rabbet</td><td></td><td>${formatLen(fd.rabbetSide, state.exact)}</td></tr>`
+          : "") +
+        `<tr><td>Thickness</td><td></td><td>${formatLen(t, state.exact)}</td></tr>`
+      : `<tr><td>Base side</td><td></td><td>${formatLen(state.dimA, state.exact)}</td></tr>` +
+        `<tr><td>Wall height</td><td></td><td>${formatLen(state.dimH, state.exact)}</td></tr>` +
+        `<tr><td>Miter / bevel</td><td></td><td>${formatAngle(r.miter, state.exact)} / ${formatAngle(r.bladeTilt, state.exact)}</td></tr>` +
+        `<tr><td>Wall thickness</td><td></td><td>${formatLen(t, state.exact)}</td></tr>`);
+
+  els.geoHint.innerHTML =
+    (frame
+      ? `Parametric OpenSCAD model of the frame (back face up${
+          fd.rabbet > 0 ? ", rabbet recess included, depth t/2" : ""}), plus one ` +
+        "stick isolated with true mitered ends. "
+      : "Parametric OpenSCAD model of the assembled box (walls offset inward " +
+        "by the thickness), plus one stave isolated through the miter planes " +
+        "— its edge faces are the true compound miters. ") +
+    "Every input is a variable at the top of the file — tweak N, sizes, " +
+    "lean, or thickness in OpenSCAD and press F5. Units are millimetres " +
+    "(1 unit = 1 mm).";
+
+  els.leanFigure.hidden = frame;
+  els.topCaption.textContent = `Top view (${n} sides)`;
+  els.leanCaption.textContent = `Side lean (${r.sideAngle.toFixed(1)}°)`;
+  drawTopView();
+  if (!frame) drawLeanView(r.sideAngle);
+}
+
 /* ---- Geodesic rendering --------------------------------------------------- */
 const GEO_BASE_LABELS = {
   tetrahedron: "Tetrahedron", cube: "Cube",
@@ -1997,6 +2278,7 @@ const GEO_BASE_LABELS = {
 function renderGeodesic() {
   const strut = state.geoCon === "strut";
   const paper = state.geoCon === "paper";
+  const scad = state.geoCon === "scad";
   const module = paper && state.geoScope === "module";
   const g = geodesic(state.geoBase, state.geoSubdiv);
   const net = paper
@@ -2025,26 +2307,37 @@ function renderGeodesic() {
     ? (module
         ? card(copies, "Modules") + card(g.f / copies, "Panels each")
         : card(g.f, "Panels") + card(net.pieces, net.pieces > 1 ? "Pieces" : "One piece"))
+    : scad
+      ? card(formatLen(state.geoRadius * state.thickPct / 100, state.exact), "Thickness")
+        + card(g.f, "Panels")
     : strut
       ? card(g.e, "Struts") + card(g.v, "Hubs")
       : card(g.f, "Panels") + card(g.e, "Glue edges");
   els.leanBanner.hidden = true;
   els.advanced.hidden = true;
-  els.geoSvgBtn.hidden = !paper;
+  els.geoSvgBtn.hidden = !(paper || scad);
   els.geoScopeRow.hidden = !paper;
   els.geoTabsRow.hidden = !paper;
   els.geoTabsChk.checked = state.geoTabs;
   els.tabPctRow.hidden = true; // geodesic tabs stay collision-sized
   els.bottomRow.hidden = true;
+  els.thickRow.hidden = !scad;
+  if (scad) {
+    els.thickRef.textContent = "% of R";
+    if (document.activeElement !== els.thickPct) els.thickPct.value = state.thickPct;
+  }
   document.querySelectorAll("#geoScopeSeg button").forEach((b) =>
     b.classList.toggle("on", b.dataset.v === state.geoScope));
-  els.geoSvgBtn.textContent = module
-    ? `Download SVG — one module (cut ${copies})`
-    : "Download SVG — whole model";
+  els.geoSvgBtn.textContent = scad
+    ? "Download OpenSCAD (.scad)"
+    : module
+      ? `Download SVG — one module (cut ${copies})`
+      : "Download SVG — whole model";
 
   // Cut list table: one row per edge class.
   const R = state.geoRadius;
   const angleCol = paper ? null : strut ? "End cut" : "Edge bevel";
+  // SCAD mode reuses the panel table (bevels are the glue-face angles).
   els.geoTable.innerHTML =
     `<tr><th>${strut ? "Strut" : "Edge"}</th><th>Qty</th><th>Length</th>` +
     (angleCol ? `<th>${angleCol}</th>` : "") + `</tr>` +
@@ -2070,6 +2363,12 @@ function renderGeodesic() {
       ". The SVG has separate “cuts” and " +
       "“scores” layers, sized in millimetres — with " +
       `R = ${fmtInput(state.geoRadius)}, that's a ${fmtInput(state.geoRadius)} mm radius.`
+    : scad
+    ? "Parametric OpenSCAD model: the assembled shell (outer polyhedron " +
+      "minus an inner copy scaled by the thickness), plus one flattened " +
+      "panel of each shape with its quantity — panel edge faces pass " +
+      "through the sphere centre, which is exactly the glue bevel above. " +
+      "R and thickness are variables in the file; units are millimetres."
     : strut
     ? "Lengths are hub-center to hub-center — subtract your hub fitting's " +
       "reach at each end. End cut is how far off square to cut both strut " +
@@ -2303,11 +2602,16 @@ els.tabPct.addEventListener("input", () => {
   if (!Number.isNaN(v)) { state.tabPct = clamp(v, 2, 50); render(); }
 });
 els.tabPct.addEventListener("blur", () => render());
+els.thickPct.addEventListener("input", () => {
+  const v = parseFloat(els.thickPct.value);
+  if (!Number.isNaN(v)) { state.thickPct = clamp(v, 1, 50); render(); }
+});
+els.thickPct.addEventListener("blur", () => render());
 document.querySelectorAll("#bottomSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.boxBottom = b.dataset.v; render(); }));
 
-function saveSVG(net, scale, title, filename, message) {
-  const blob = new Blob([paperSVG(net, scale, title)], { type: "image/svg+xml" });
+function saveFile(content, mime, filename, message) {
+  const blob = new Blob([content], { type: mime });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;
@@ -2315,8 +2619,36 @@ function saveSVG(net, scale, title, filename, message) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   toast(message);
 }
+function saveSVG(net, scale, title, filename, message) {
+  saveFile(paperSVG(net, scale, title), "image/svg+xml", filename, message);
+}
 
 els.geoSvgBtn.addEventListener("click", () => {
+  // OpenSCAD downloads (parametric .scad text) come first.
+  if (state.mode === "geodesicSphere" && state.geoCon === "scad") {
+    saveFile(geoScad(state.geoBase, state.geoSubdiv, state.geoRadius, state.thickPct),
+      "text/plain",
+      `miterpal-geodesic-${state.geoBase}-${state.geoSubdiv}subdiv` +
+        `-R${state.geoRadius}-t${state.thickPct}.scad`,
+      "OpenSCAD file downloaded");
+    return;
+  }
+  if (state.mode !== "geodesicSphere" && state.boxOut === "scad") {
+    if (state.mode === "pictureFrame") {
+      saveFile(frameScad(state.n, state.dimA, state.dimW, state.dimRabbet, state.thickPct),
+        "text/plain",
+        `miterpal-frame-N${state.n}-A${state.dimA}-W${state.dimW}` +
+          `-t${state.thickPct}.scad`,
+        "OpenSCAD file downloaded");
+    } else {
+      saveFile(boxScad(state.n, state.sideAngle, state.dimA, state.dimH, state.thickPct),
+        "text/plain",
+        `miterpal-box-N${state.n}-S${state.sideAngle}-A${state.dimA}` +
+          `-H${state.dimH}-t${state.thickPct}.scad`,
+        "OpenSCAD file downloaded");
+    }
+    return;
+  }
   if (state.mode === "geodesicSphere") {
     const module = state.geoScope === "module";
     const net = paperNet(state.geoBase, state.geoSubdiv, module, state.geoTabs);
@@ -2402,6 +2734,7 @@ $("saveOk").addEventListener("click", () => {
     geoRadius: state.geoRadius, geoCon: state.geoCon, geoScope: state.geoScope,
     geoTabs: state.geoTabs, boxOut: state.boxOut,
     boxTabs: state.boxTabs, tabPct: state.tabPct, boxBottom: state.boxBottom,
+    thickPct: state.thickPct,
     dimA: state.dimA, dimH: state.dimH, dimW: state.dimW,
     dimRabbet: state.dimRabbet });
   persistProjects();
@@ -2444,10 +2777,9 @@ function renderProjects() {
       state.geoBase = GEO_BASE_LABELS[p.geoBase] ? p.geoBase : "icosahedron";
       state.geoSubdiv = clamp(p.geoSubdiv ?? 1, 0, GEO_MAX_SUBDIV);
       state.geoRadius = clamp(p.geoRadius ?? 10, 0, 1e6);
-      state.geoCon = ["strut", "paper"].includes(p.geoCon) ? p.geoCon : "panel";
+      state.geoCon = ["strut", "paper", "scad"].includes(p.geoCon) ? p.geoCon : "panel";
       state.geoScope = p.geoScope === "module" ? "module" : "model";
       state.geoTabs = p.geoTabs !== false;
-      state.boxOut = p.boxOut === "paper" ? "paper" : "saw";
       state.dimA = clamp(p.dimA ?? 60, 0.001, 1e6);
       state.dimH = clamp(p.dimH ?? 40, 0.001, 1e6);
       state.dimW = clamp(p.dimW ?? 15, 0.001, 1e6);
@@ -2455,6 +2787,8 @@ function renderProjects() {
       state.boxTabs = p.boxTabs !== false;
       state.tabPct = clamp(p.tabPct ?? 10, 2, 50);
       state.boxBottom = p.boxBottom === "rim" ? "rim" : "base";
+      state.thickPct = clamp(p.thickPct ?? 10, 1, 50);
+      state.boxOut = ["paper", "scad"].includes(p.boxOut) ? p.boxOut : "saw";
       dlgProjects.close();
       render();
     });
@@ -2518,7 +2852,7 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 // Expose the math for testing (node --experimental-default-type=module not
 // needed; tests read this file and eval the script block).
 if (typeof module !== "undefined") {
-  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs, boxPaperNet, boxBandNet, framePaperNet };
+  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs, boxPaperNet, boxBandNet, framePaperNet, boxScad, frameScad, geoScad };
 }
 </script>
 </body>
