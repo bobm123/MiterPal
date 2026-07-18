@@ -1719,6 +1719,9 @@ H_face = ${H};       // wall height measured along the face
 S = ${sDeg};         // side lean from vertical (deg), + splays out
 thick_pct = ${thickPct}; // wall thickness, % of A
 
+show_box   = true;   // the assembled box
+show_stave = true;   // one stave laid flat alongside
+
 t     = A * thick_pct / 100;
 alpha = 180 / N;
 Hv    = H_face * cos(S);            // vertical height
@@ -1758,9 +1761,10 @@ module wedge() {
 
 module stave() intersection() { box(); wedge(); }
 
-box();
-translate([2.2 * A, a0, 0]) rotate([-(90 - S), 0, 0]) translate([0, a0, 0])
-  stave();   // laid roughly face-down; flip the rotate sign if it lands inverted
+if (show_box) box();
+if (show_stave)
+  translate([2.2 * A, a0, 0]) rotate([-(90 - S), 0, 0]) translate([0, a0, 0])
+    stave();   // laid roughly face-down; flip the rotate sign if it lands inverted
 `;
 }
 
@@ -1773,6 +1777,9 @@ A = ${A};            // outside side length
 W = ${W};            // frame width (face)
 R_rab = ${rab};      // rabbet width (0 = none); recess depth is t/2
 thick_pct = ${thickPct}; // material thickness, % of W
+
+show_frame = true;   // the assembled frame
+show_stick = true;   // one mitered stick alongside
 
 t     = W * thick_pct / 100;
 alpha = 180 / N;
@@ -1803,8 +1810,8 @@ module wedge() {
 
 module stick() intersection() { frame(); wedge(); } // true mitered ends
 
-frame();
-translate([1.6 * A, 0, 0]) stick();
+if (show_frame) frame();
+if (show_stick) translate([1.6 * A, 0, 0]) stick();
 `;
 }
 
@@ -1849,6 +1856,9 @@ R = ${R};             // circumradius (centre to vertex)
 thick_pct = ${thickPct};  // panel thickness, % of R (radial)
 k_in = 1 - thick_pct / 100;
 
+show_shell  = true;   // the assembled shell
+show_panels = true;   // the flattened panel templates alongside
+
 pts = [
 ${verts.map((v) => `  [${fmt(v[0])}, ${fmt(v[1])}, ${fmt(v[2])}]`).join(",\n")}
 ];
@@ -1888,10 +1898,11 @@ module panel_flat(f) {
     panel(f);
 }
 
-shell();
+if (show_shell) shell();
 ${reps.map((r2, i) =>
 `// panel type ${r2.combo} - make ${r2.count}
-translate([${fmt(1.6 + i * 1.3)} * R, -1.6 * R, 0]) panel_flat(fcs[${r2.fi}]);`
+if (show_panels)
+  translate([${fmt(1.6 + i * 1.3)} * R, -1.6 * R, 0]) panel_flat(fcs[${r2.fi}]);`
 ).join("\n")}
 `;
 }
@@ -2259,8 +2270,9 @@ function renderBoxScad(frame, r) {
         "by the thickness), plus one stave isolated through the miter planes " +
         "— its edge faces are the true compound miters. ") +
     "Every input is a variable at the top of the file — tweak N, sizes, " +
-    "lean, or thickness in OpenSCAD and press F5. Units are millimetres " +
-    "(1 unit = 1 mm).";
+    "lean, or thickness in OpenSCAD and press F5; show_* switches toggle " +
+    "the assembled model and the loose part (e.g. for exporting the part " +
+    "alone as STL). Units are millimetres (1 unit = 1 mm).";
 
   els.leanFigure.hidden = frame;
   els.topCaption.textContent = `Top view (${n} sides)`;
@@ -2368,7 +2380,8 @@ function renderGeodesic() {
       "minus an inner copy scaled by the thickness), plus one flattened " +
       "panel of each shape with its quantity — panel edge faces pass " +
       "through the sphere centre, which is exactly the glue bevel above. " +
-      "R and thickness are variables in the file; units are millimetres."
+      "R and thickness are variables in the file, and show_* switches " +
+      "toggle the shell and the panels; units are millimetres."
     : strut
     ? "Lengths are hub-center to hub-center — subtract your hub fitting's " +
       "reach at each end. End cut is how far off square to cut both strut " +
