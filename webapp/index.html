@@ -234,6 +234,7 @@
         <option value="tetrahedron">Tetrahedron</option>
         <option value="cube">Cube</option>
         <option value="octahedron">Octahedron</option>
+        <option value="dodecahedron">Dodecahedron</option>
         <option value="icosahedron" selected>Icosahedron</option>
       </select>
     </div>
@@ -479,6 +480,9 @@ function computeFixedBevelBit(n, bitAngleDeg) {
    saw bevel on that edge is half the angle between the panel normals
    (equivalently 90° − D/2, the same convention as the box modes).           */
 const GEO_MAX_SUBDIV = 3;
+// The dodecahedron's cut list gets long fast (60 kis triangles at subdiv
+// 1), so it stops one step earlier than the other solids.
+const geoMaxSubdiv = (base) => base === "dodecahedron" ? 2 : GEO_MAX_SUBDIV;
 
 function geoBaseMesh(name) {
   if (name === "tetrahedron") {
@@ -510,6 +514,21 @@ function geoBaseMesh(name) {
       faces.push([a, b, m], [b, cq, m], [cq, d, m], [d, a, m]);
     }
     return { verts, faces };
+  }
+  if (name === "dodecahedron") {
+    // Pentagons can't feed the triangle subdivider either: like the cube,
+    // each face is pre-triangulated through its sphere-projected center
+    // (5 triangles per face, 60 total — the pentakis dodecahedron). This
+    // counts as the first subdivision step; subdivision 0 is the true flat
+    // dodecahedron, special-cased in computeGeodesic.
+    const { verts, dirs, faces } = dodecaGeometry();
+    const allVerts = verts.concat(dirs);        // centers are already unit
+    const tris = [];
+    faces.forEach((f, fi) => {
+      const m = 20 + fi;
+      for (let k = 0; k < 5; k++) tris.push([f[k], f[(k + 1) % 5], m]);
+    });
+    return { verts: allVerts, faces: tris };
   }
   if (name === "octahedron") {
     return {
@@ -587,6 +606,77 @@ function edgeLabel(i) {
   return s;
 }
 
+// Shared dodecahedron geometry: 20 unit-circumradius vertices, the 12 unit
+// face-center directions (= icosahedron vertex directions, by duality), and
+// the 12 pentagon faces as vertex cycles wound CCW seen from outside.
+function dodecaGeometry() {
+  const phi = (1 + Math.sqrt(5)) / 2, k = 1 / Math.sqrt(3);
+  const verts = [];
+  for (const x of [k, -k]) for (const y of [k, -k]) for (const z of [k, -k]) {
+    verts.push([x, y, z]);                       // cube corners 0-7
+  }
+  const b = k / phi, c = k * phi;                // cyclic perms of (0, ±1/φ, ±φ)/√3
+  for (const u of [b, -b]) for (const v of [c, -c]) {
+    verts.push([0, u, v], [u, v, 0], [v, 0, u]); // 8-19
+  }
+  const kk = 1 / Math.hypot(1, phi);
+  // Face centers lie along the cyclic permutations of (±1, 0, ±φ) — the
+  // icosahedron orientation dual to the vertex coordinates above.
+  const dirs = [];
+  for (const u of [kk, -kk]) for (const v of [phi * kk, -phi * kk]) {
+    dirs.push([u, 0, v], [0, v, u], [v, u, 0]);
+  }
+  const faces = dirs.map((d) => {
+    // The face around center-direction d is the 5 vertices nearest to d,
+    // ordered by angle in the plane perpendicular to d (CCW from outside).
+    const ring = verts
+      .map((p, i) => ({ i, dot: p[0] * d[0] + p[1] * d[1] + p[2] * d[2] }))
+      .sort((p, q) => q.dot - p.dot).slice(0, 5).map((r) => r.i);
+    const v0 = verts[ring[0]];
+    const proj = v0.map((x, ax) => x - (v0[0] * d[0] + v0[1] * d[1] + v0[2] * d[2]) * d[ax]);
+    const L = Math.hypot(...proj);
+    const e1 = proj.map((x) => x / L);
+    const e2 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2],
+                d[0] * e1[1] - d[1] * e1[0]];
+    return ring
+      .map((i) => {
+        const p = verts[i];
+        return { i, a: Math.atan2(p[0] * e2[0] + p[1] * e2[1] + p[2] * e2[2],
+                                  p[0] * e1[0] + p[1] * e1[1] + p[2] * e1[2]) };
+      })
+      .sort((p, q) => p.a - q.a).map((r) => r.i);
+  });
+  return { verts, dirs, faces };
+}
+
+// The un-subdivided dodecahedron keeps its flat pentagon faces: 12 panels,
+// 30 edges, one edge class, 116.57° dihedral everywhere (31.72° bevel).
+function flatDodecahedron() {
+  const { verts, faces } = dodecaGeometry();
+  const chord = dist3(verts[faces[0][0]], verts[faces[0][1]]);
+  const dihedral = Math.acos(-1 / Math.sqrt(5)) / DEG;   // 116.565°
+  const cls = { label: "A", chord, dihedral, bevel: (180 - dihedral) / 2,
+                count: 30, endCut: Math.asin(chord / 2) / DEG };
+  const seen = new Set(), edgeList = [];
+  for (const f of faces) {
+    for (let kk2 = 0; kk2 < 5; kk2++) {
+      const i = Math.min(f[kk2], f[(kk2 + 1) % 5]);
+      const j = Math.max(f[kk2], f[(kk2 + 1) % 5]);
+      if (seen.has(i + "_" + j)) continue;
+      seen.add(i + "_" + j);
+      edgeList.push({ i, j, cls });
+    }
+  }
+  return {
+    v: 20, e: 30, f: 12,
+    classes: [cls],
+    panels: [{ combo: "A-A-A-A-A", count: 12 }],
+    hubs: [{ count: 20, valence: 3, combo: "3A" }],
+    mesh: { verts, faces },
+    edgeList,
+  };
+}
+
 // The un-subdivided cube keeps its flat square faces: 6 panels, 12 edges,
 // one edge class, 90° dihedral everywhere (45° bevel — the classic box).
 function flatCube() {
@@ -626,12 +716,14 @@ function flatCube() {
 // Full analysis for a unit-radius sphere. Chords scale by the user's radius.
 function computeGeodesic(base, subdiv) {
   if (base === "cube" && subdiv === 0) return flatCube();
+  if (base === "dodecahedron" && subdiv === 0) return flatDodecahedron();
   let mesh = geoBaseMesh(base);
-  // Patch id per face: for the cube, the 4 kis-triangles of one square face
-  // belong to the same patch.
-  mesh.faceBase = mesh.faces.map((_, i) => base === "cube" ? i >> 2 : i);
-  // For the cube, the face triangulation in geoBaseMesh is subdivision 1.
-  const steps = base === "cube" ? subdiv - 1 : subdiv;
+  // Patch id per face: for the cube (dodecahedron), the 4 (5) kis-triangles
+  // of one base face belong to the same patch.
+  mesh.faceBase = mesh.faces.map((_, i) =>
+    base === "cube" ? i >> 2 : base === "dodecahedron" ? Math.floor(i / 5) : i);
+  // For the kis solids, the face triangulation in geoBaseMesh is subdiv 1.
+  const steps = base === "cube" || base === "dodecahedron" ? subdiv - 1 : subdiv;
   for (let i = 0; i < steps; i++) mesh = geoSubdivide(mesh);
   const { verts, faces } = mesh;
   const normals = faces.map((f) => geoFaceNormal(verts, f));
@@ -743,6 +835,25 @@ function computePaperNet(base, subdiv, force) {
     return { polys: [[[0, 0], [s, 0], [s, s], [0, s]]], folds: [], cuts: sq,
              cutInfo: sq.map((seg) => ({ seg, face: 0, partner: -1 })),
              pieces: 1, bbox: { x0: 0, y0: 0, x1: s, y1: s } };
+  }
+  if (base === "dodecahedron" && subdiv === 0) {
+    if (force !== "module") return flatDodecaNet();
+    // One pentagon of unit-circumsphere edge length, in the first quadrant.
+    const g0 = dodecaGeometry();
+    const s = dist3(g0.verts[g0.faces[0][0]], g0.verts[g0.faces[0][1]]);
+    const r = s / (2 * Math.sin(Math.PI / 5));
+    const raw = [0, 1, 2, 3, 4].map((i) => [
+      r * Math.cos(Math.PI / 2 + i * 2 * Math.PI / 5),
+      r * Math.sin(Math.PI / 2 + i * 2 * Math.PI / 5)]);
+    const mx = Math.min(...raw.map((p) => p[0])), my = Math.min(...raw.map((p) => p[1]));
+    const pent = raw.map(([x, y]) => [x - mx, y - my]);
+    const cuts = pent.map((p, i) =>
+      [p[0], p[1], pent[(i + 1) % 5][0], pent[(i + 1) % 5][1]]);
+    return { polys: [pent], folds: [], cuts,
+             cutInfo: cuts.map((seg) => ({ seg, face: 0, partner: -1 })),
+             pieces: 1,
+             bbox: { x0: 0, y0: 0, x1: Math.max(...pent.map((p) => p[0])),
+                     y1: Math.max(...pent.map((p) => p[1])) } };
   }
   const g = geodesic(base, subdiv);
   const { verts, faces, faceBase } = g.mesh;
@@ -1142,6 +1253,115 @@ function flatCubeNet() {
   });
   return { polys, folds, cuts, cutInfo, pieces: 1,
            bbox: { x0: 0, y0: 0, x1: 4 * s, y1: 3 * s } };
+}
+
+// Classic 12-pentagon dodecahedron net: two rosettes (a face and its five
+// neighbors) joined petal-to-petal. Built by rigidly unfolding the actual
+// solid through a fixed spanning tree, so it needs no hand-placed coords.
+function flatDodecaNet() {
+  const { verts, dirs, faces } = dodecaGeometry();
+  const F = faces.length;
+  // Face adjacency via shared edges.
+  const edgeFace = new Map(), facePair = new Map(),
+        nbrs = Array.from({ length: F }, () => []);
+  faces.forEach((f, fi) => {
+    for (let k = 0; k < 5; k++) {
+      const key = Math.min(f[k], f[(k + 1) % 5]) + "_" + Math.max(f[k], f[(k + 1) % 5]);
+      if (edgeFace.has(key)) {
+        const fj = edgeFace.get(key);
+        nbrs[fi].push(fj); nbrs[fj].push(fi);
+        facePair.set(key, Math.min(fi, fj) + "_" + Math.max(fi, fj));
+      } else edgeFace.set(key, fi);
+    }
+  });
+  // Spanning tree: bottom rosette, one petal-to-petal bridge, top rosette.
+  const bottom = 0;
+  let top = 0, best = 1e9;
+  dirs.forEach((d, i) => {
+    const dp = d[0] * dirs[bottom][0] + d[1] * dirs[bottom][1] + d[2] * dirs[bottom][2];
+    if (dp < best) { best = dp; top = i; }
+  });
+  const bridgeP = nbrs[bottom][0];
+  const bridgeQ = nbrs[bridgeP].find((f) => nbrs[top].includes(f));
+  const tree = [];
+  for (const p of nbrs[bottom]) tree.push([bottom, p]);
+  tree.push([bridgeP, bridgeQ], [bridgeQ, top]);
+  for (const q of nbrs[top]) if (q !== bridgeQ) tree.push([top, q]);
+  // Local 2D coords of a face cycle (basis in its plane, n outward).
+  const local2d = (fi) => {
+    const d = dirs[fi], f = faces[fi], v0 = verts[f[0]];
+    const dp0 = v0[0] * d[0] + v0[1] * d[1] + v0[2] * d[2];
+    const p0 = v0.map((x, ax) => x - dp0 * d[ax]);
+    const L = Math.hypot(...p0);
+    const e1 = p0.map((x) => x / L);
+    const e2 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2],
+                d[0] * e1[1] - d[1] * e1[0]];
+    return f.map((i) => {
+      const p = verts[i];
+      return [p[0] * e1[0] + p[1] * e1[1] + p[2] * e1[2],
+              p[0] * e2[0] + p[1] * e2[1] + p[2] * e2[2]];
+    });
+  };
+  const face2d = []; // per face: 2D coords aligned with faces[fi] cycle order
+  face2d[bottom] = local2d(bottom);
+  for (const [par, ch] of tree) {
+    const fp = faces[par], fc = faces[ch];
+    const shared = fc.filter((v) => fp.includes(v));
+    const [a, b2] = shared;
+    const loc = local2d(ch);
+    const la = loc[fc.indexOf(a)], lb = loc[fc.indexOf(b2)];
+    const Pa = face2d[par][fp.indexOf(a)], Pb = face2d[par][fp.indexOf(b2)];
+    // Rigid transform mapping the child's shared edge onto the parent's.
+    const place = (mirror) => {
+      const [lax, lay] = la, [lbx, lby] = mirror ? [lb[0], -lb[1]] : lb;
+      const [max2, may] = mirror ? [la[0], -la[1]] : la;
+      const ang = Math.atan2(Pb[1] - Pa[1], Pb[0] - Pa[0]) -
+                  Math.atan2(lby - may, lbx - max2);
+      const cs = Math.cos(ang), sn = Math.sin(ang);
+      return loc.map(([x, y]) => {
+        const yy = mirror ? -y : y;
+        const rx = x * cs - yy * sn, ry = x * sn + yy * cs;
+        const ox = Pa[0] - (max2 * cs - may * sn), oy = Pa[1] - (max2 * sn + may * cs);
+        return [rx + ox, ry + oy];
+      });
+    };
+    // The child must land on the far side of the edge from the parent.
+    const side = (pts) => {
+      const cx = pts.reduce((s2, p) => s2 + p[0], 0) / pts.length;
+      const cy = pts.reduce((s2, p) => s2 + p[1], 0) / pts.length;
+      return Math.sign((Pb[0] - Pa[0]) * (cy - Pa[1]) - (Pb[1] - Pa[1]) * (cx - Pa[0]));
+    };
+    const direct = place(false);
+    face2d[ch] = side(direct) !== side(face2d[par]) ? direct : place(true);
+  }
+  // Shift into the positive quadrant.
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const pts of face2d) for (const [px, py] of pts) {
+    x0 = Math.min(x0, px); y0 = Math.min(y0, py);
+    x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+  }
+  const polys = face2d.map((pts) => pts.map(([px, py]) => [px - x0, py - y0]));
+  // Classify edges: tree edges fold, everything else is a pair of cut lips.
+  const treeSet = new Set(tree.map(([p, q]) => Math.min(p, q) + "_" + Math.max(p, q)));
+  const folds = [], cuts = [], cutInfo = [], lipAt = new Map();
+  faces.forEach((f, fi) => {
+    for (let k = 0; k < 5; k++) {
+      const key = Math.min(f[k], f[(k + 1) % 5]) + "_" + Math.max(f[k], f[(k + 1) % 5]);
+      const a = polys[fi][k], b2 = polys[fi][(k + 1) % 5];
+      const seg = [a[0], a[1], b2[0], b2[1]];
+      if (treeSet.has(facePair.get(key))) {
+        if (edgeFace.get(key) === fi) folds.push(seg); // emit once
+        continue;
+      }
+      cuts.push(seg);
+      const idx = cutInfo.length;
+      cutInfo.push({ seg, face: fi, partner: lipAt.get(key) ?? -1 });
+      if (lipAt.has(key)) cutInfo[lipAt.get(key)].partner = idx;
+      else lipAt.set(key, idx);
+    }
+  });
+  return { polys, folds, cuts, cutInfo, pieces: 1,
+           bbox: { x0: 0, y0: 0, x1: x1 - x0, y1: y1 - y0 } };
 }
 
 /* ---- Glue tabs -----------------------------------------------------------
@@ -1660,7 +1880,8 @@ function paperNet(base, subdiv, module, tabs) {
 }
 
 // How many copies of the repeating module build the whole sphere.
-const GEO_MODULE_COUNT = { tetrahedron: 4, cube: 6, octahedron: 8, icosahedron: 20 };
+const GEO_MODULE_COUNT = { tetrahedron: 4, cube: 6, octahedron: 8,
+                           dodecahedron: 12, icosahedron: 20 };
 
 // SVG cut file: red = cut, dashed blue = fold (score). Cuts and folds sit
 // on separate named layers (Inkscape layer convention, which most cutter
@@ -2283,8 +2504,8 @@ function renderBoxScad(frame, r) {
 
 /* ---- Geodesic rendering --------------------------------------------------- */
 const GEO_BASE_LABELS = {
-  tetrahedron: "Tetrahedron", cube: "Cube",
-  octahedron: "Octahedron", icosahedron: "Icosahedron",
+  tetrahedron: "Tetrahedron", cube: "Cube", octahedron: "Octahedron",
+  dodecahedron: "Dodecahedron", icosahedron: "Icosahedron",
 };
 
 function renderGeodesic() {
@@ -2304,7 +2525,7 @@ function renderGeodesic() {
   els.nLabel.textContent = "Subdivisions";
   els.nValue.textContent = state.geoSubdiv;
   els.nMinus.disabled = state.geoSubdiv <= 0;
-  els.nPlus.disabled = state.geoSubdiv >= GEO_MAX_SUBDIV;
+  els.nPlus.disabled = state.geoSubdiv >= geoMaxSubdiv(state.geoBase);
 
   els.angleCard.hidden = false;
   els.angleLabel.textContent = "Radius (R)";
@@ -2558,7 +2779,7 @@ els.mode.addEventListener("change", () => { state.mode = els.mode.value; render(
 // Geodesic Sphere mode.
 els.nPlus.addEventListener("click", () => {
   if (state.mode === "geodesicSphere") {
-    state.geoSubdiv = Math.min(GEO_MAX_SUBDIV, state.geoSubdiv + 1);
+    state.geoSubdiv = Math.min(geoMaxSubdiv(state.geoBase), state.geoSubdiv + 1);
   } else {
     state.n++;
   }
@@ -2573,7 +2794,11 @@ els.nMinus.addEventListener("click", () => {
   render();
 });
 
-els.geoBase.addEventListener("change", () => { state.geoBase = els.geoBase.value; render(); });
+els.geoBase.addEventListener("change", () => {
+  state.geoBase = els.geoBase.value;
+  state.geoSubdiv = Math.min(state.geoSubdiv, geoMaxSubdiv(state.geoBase));
+  render();
+});
 document.querySelectorAll("#boxOutSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.boxOut = b.dataset.v; render(); }));
 
@@ -2788,7 +3013,7 @@ function renderProjects() {
       state.sideAngle = clamp(p.sideAngle, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
       state.bitAngle = clamp(p.bitAngle ?? 30, 0, MAX_SIDE_ANGLE);
       state.geoBase = GEO_BASE_LABELS[p.geoBase] ? p.geoBase : "icosahedron";
-      state.geoSubdiv = clamp(p.geoSubdiv ?? 1, 0, GEO_MAX_SUBDIV);
+      state.geoSubdiv = clamp(p.geoSubdiv ?? 1, 0, geoMaxSubdiv(state.geoBase));
       state.geoRadius = clamp(p.geoRadius ?? 10, 0, 1e6);
       state.geoCon = ["strut", "paper", "scad"].includes(p.geoCon) ? p.geoCon : "panel";
       state.geoScope = p.geoScope === "module" ? "module" : "model";
