@@ -168,11 +168,15 @@
   .setting .label small { display: block; color: var(--text-dim); font-size: 12.5px; }
   .seg { display: flex; border: 1px solid var(--outline); border-radius: 20px; overflow: hidden; }
   .seg button { border-radius: 0; padding: 7px 14px; font-size: 14px; white-space: nowrap; }
-  /* Four-way segments get tight on narrow screens: shrink the buttons and
-     let the segment wrap onto its own line when it still doesn't fit. */
-  #geoConSeg { margin-left: auto; }
-  #geoConSeg button { padding: 7px 8px; font-size: 13px; }
-  .row:has(#geoConSeg) { flex-wrap: wrap; }
+  /* Multi-button segments get tight on narrow screens: shrink the buttons
+     and let the segment wrap onto its own line when it still doesn't fit. */
+  #geoConSeg, #boxOutSeg, #jointSeg { margin-left: auto; }
+  #geoConSeg button, #boxOutSeg button, #jointSeg button {
+    padding: 7px 8px; font-size: 13px;
+  }
+  .row:has(#geoConSeg), .row:has(#boxOutSeg), .row:has(#jointSeg) {
+    flex-wrap: wrap;
+  }
   .seg button.on { background: var(--primary-container); color: var(--on-primary-container); }
   /* Geodesic edge/strut table */
   .geo-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
@@ -216,12 +220,10 @@
 <main>
   <div class="card">
     <div class="row">
-      <span class="label">Joint type</span>
+      <span class="label">Project</span>
       <select id="mode">
         <option value="pictureFrame">Picture Frame</option>
-        <option value="miteredBox" selected>Mitered Box</option>
-        <option value="buttJointBox">Butt Joint Box</option>
-        <option value="fixedBevelBit">Fixed Bevel Bit</option>
+        <option value="box" selected>Box</option>
         <option value="geodesicSphere">Geodesic Sphere</option>
       </select>
     </div>
@@ -277,6 +279,14 @@
         <button data-v="saw">Saw settings</button>
         <button data-v="paper">Paper model</button>
         <button data-v="scad" id="scadOutBtn">OpenSCAD</button>
+      </div>
+    </div>
+    <div class="row" id="jointRow" style="margin-top: 10px;" hidden>
+      <span class="label">Joint</span>
+      <div class="seg" id="jointSeg">
+        <button data-v="miter">Mitered</button>
+        <button data-v="butt">Butt</button>
+        <button data-v="bevel">Bevel bit</button>
       </div>
     </div>
   </div>
@@ -2126,7 +2136,8 @@ const state = {
   n: 4,
   sideAngle: 10,
   bitAngle: 30,
-  mode: "miteredBox",
+  mode: "box",           // "pictureFrame" | "box" | "geodesicSphere"
+  boxJoint: "miter",     // box saw settings: "miter" | "butt" | "bevel"
   geoBase: "icosahedron",
   geoSubdiv: 1,
   geoRadius: 10,
@@ -2169,6 +2180,7 @@ const els = {
   tabPctRow: $("tabPctRow"), tabPct: $("tabPct"), bottomRow: $("bottomRow"),
   thickRow: $("thickRow"), thickPct: $("thickPct"), thickRef: $("thickRef"),
   scadOutBtn: $("scadOutBtn"),
+  jointRow: $("jointRow"),
   woodChecklist: $("woodChecklist"), paperChecklist: $("paperChecklist"),
   outCard: $("outCard"), dimCard: $("dimCard"),
   dimA: $("dimA"), dimB: $("dimB"), dimBLabel: $("dimBLabel"),
@@ -2193,17 +2205,23 @@ function showOptionRows({ scope, tabs, tabPct, bottom, thick } = {}) {
   els.thickRow.hidden = !thick;
 }
 
+// The three box joints share every input and output except the saw-settings
+// math, so they are one project type with a Joint selector in the saw view.
+const JOINT_MODE = { miter: "miteredBox", butt: "buttJointBox", bevel: "fixedBevelBit" };
+
 function render() {
   applyTheme();
   const geo = state.mode === "geodesicSphere";
   els.mode.value = state.mode;
-  const boxish = ["pictureFrame", "miteredBox", "buttJointBox"].includes(state.mode);
-  // Butt joint has no SCAD output (identical solid to the mitered box).
-  if (state.mode === "buttJointBox" && state.boxOut === "scad") state.boxOut = "saw";
-  els.scadOutBtn.hidden = state.mode === "buttJointBox";
+  const boxish = !geo;
   const boxPaper = boxish && state.boxOut === "paper";
   const boxScadOut = boxish && state.boxOut === "scad";
   const frameSaw = state.mode === "pictureFrame" && !boxPaper && !boxScadOut;
+  // The joint choice only affects the saw settings; paper and OpenSCAD
+  // outputs are the same box for all three joints.
+  els.jointRow.hidden = !(state.mode === "box" && state.boxOut === "saw");
+  document.querySelectorAll("#jointSeg button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.v === state.boxJoint));
   els.geoBaseCard.hidden = !geo;
   els.geoCard.hidden = !(geo || boxPaper || boxScadOut || frameSaw);
   els.outCard.hidden = !boxish;
@@ -2217,8 +2235,12 @@ function render() {
     b.classList.toggle("on", b.dataset.v === state.boxOut));
 
   const frame = state.mode === "pictureFrame";
-  const bit = state.mode === "fixedBevelBit";
-  const r = computeForMode(state.mode, state.n, state.sideAngle, state.bitAngle);
+  const bit = state.mode === "box" && state.boxJoint === "bevel" &&
+              !boxPaper && !boxScadOut;
+  const effMode = frame ? "pictureFrame"
+    : boxPaper || boxScadOut ? "miteredBox" // joint-agnostic outputs
+    : JOINT_MODE[state.boxJoint];
+  const r = computeForMode(effMode, state.n, state.sideAngle, state.bitAngle);
 
   els.nLabel.textContent = "Sides (N)";
   els.angleUnit.textContent = "°";
@@ -2742,6 +2764,8 @@ els.geoBase.addEventListener("change", () => {
 });
 document.querySelectorAll("#boxOutSeg button").forEach((b) =>
   b.addEventListener("click", () => { state.boxOut = b.dataset.v; render(); }));
+document.querySelectorAll("#jointSeg button").forEach((b) =>
+  b.addEventListener("click", () => { state.boxJoint = b.dataset.v; render(); }));
 
 // Paper dimension inputs: A is shared; the second field is H for boxes and
 // W for the picture frame.
@@ -2866,12 +2890,16 @@ els.geoSvgBtn.addEventListener("click", () => {
   }
 });
 
-// The angle card edits S in the box modes, B in Fixed Bevel Bit mode, and
-// the sphere radius in Geodesic Sphere mode.
+// The angle card edits the bit angle only in the bevel-bit saw view; the
+// paper and OpenSCAD outputs always take the side lean S.
+function bitAngleActive() {
+  return state.mode === "box" && state.boxJoint === "bevel" &&
+         state.boxOut === "saw";
+}
 function setAngle(v) {
   if (state.mode === "geodesicSphere") {
     state.geoRadius = clamp(v, 0.001, 1e6); // R=0 would export a blank SVG
-  } else if (state.mode === "fixedBevelBit") {
+  } else if (bitAngleActive()) {
     state.bitAngle = clamp(v, 0, MAX_SIDE_ANGLE); // a cutter can't be negative
   } else {
     state.sideAngle = clamp(v, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
@@ -2880,7 +2908,7 @@ function setAngle(v) {
 }
 function currentAngle() {
   if (state.mode === "geodesicSphere") return state.geoRadius;
-  return state.mode === "fixedBevelBit" ? state.bitAngle : state.sideAngle;
+  return bitAngleActive() ? state.bitAngle : state.sideAngle;
 }
 els.sValue.addEventListener("input", () => {
   const v = parseFloat(els.sValue.value);
@@ -2897,9 +2925,9 @@ const dlgSave = $("dlgSave"), dlgProjects = $("dlgProjects"), dlgSettings = $("d
 $("btnSave").addEventListener("click", () => {
   $("saveName").value =
     state.mode === "pictureFrame" ? `${state.n}-side frame`
-    : state.mode === "fixedBevelBit" ? `${state.n}-side, ${state.bitAngle}° bit`
     : state.mode === "geodesicSphere"
       ? `${GEO_BASE_LABELS[state.geoBase]} sphere, ${state.geoSubdiv} subdiv`
+    : state.boxJoint === "bevel" ? `${state.n}-side, ${state.bitAngle}° bit`
     : `${state.n}-side @ ${state.sideAngle}°`;
   dlgSave.showModal();
 });
@@ -2908,7 +2936,7 @@ $("saveOk").addEventListener("click", () => {
   const name = $("saveName").value.trim();
   if (!name) return;
   state.projects.push({ name, n: state.n, sideAngle: state.sideAngle,
-    mode: state.mode, bitAngle: state.bitAngle,
+    mode: state.mode, boxJoint: state.boxJoint, bitAngle: state.bitAngle,
     geoBase: state.geoBase, geoSubdiv: state.geoSubdiv,
     geoRadius: state.geoRadius, geoCon: state.geoCon, geoScope: state.geoScope,
     geoTabs: state.geoTabs, boxOut: state.boxOut,
@@ -2931,25 +2959,32 @@ function renderProjects() {
     return;
   }
   list.innerHTML = "";
-  const modeLabels = { pictureFrame: "Picture Frame", miteredBox: "Mitered Box",
-    buttJointBox: "Butt Joint Box", fixedBevelBit: "Fixed Bevel Bit",
-    geodesicSphere: "Geodesic Sphere" };
+  // Records from before the box modes were unified store the old mode
+  // strings; map them onto Box + a joint so old saves keep loading.
+  const LEGACY_JOINT = { miteredBox: "miter", buttJointBox: "butt",
+                         fixedBevelBit: "bevel" };
+  const JOINT_LABELS = { miter: "Mitered", butt: "Butt joint", bevel: "Bevel bit" };
   state.projects.forEach((p, i) => {
     const row = document.createElement("div");
     row.className = "proj";
-    const mode = p.mode ?? "miteredBox"; // legacy entries default to mitered
+    let mode = p.mode ?? "box";
+    let joint = ["miter", "butt", "bevel"].includes(p.boxJoint) ? p.boxJoint : "miter";
+    if (LEGACY_JOINT[mode]) { joint = LEGACY_JOINT[mode]; mode = "box"; }
+    if (!["pictureFrame", "box", "geodesicSphere"].includes(mode)) mode = "box";
     const detail =
-      mode === "pictureFrame" ? `${modeLabels[mode]} · N=${p.n}`
-      : mode === "fixedBevelBit" ? `${modeLabels[mode]} · N=${p.n} · B=${p.bitAngle ?? 30}°`
+      mode === "pictureFrame" ? `Picture Frame · N=${p.n}`
       : mode === "geodesicSphere"
-        ? `${modeLabels[mode]} · ${GEO_BASE_LABELS[p.geoBase ?? "icosahedron"]} · ` +
+        ? `Geodesic Sphere · ${GEO_BASE_LABELS[p.geoBase ?? "icosahedron"]} · ` +
           `${p.geoSubdiv ?? 1} subdiv · R=${p.geoRadius ?? 10}`
-      : `${modeLabels[mode]} · N=${p.n} · S=${p.sideAngle}°`;
+      : joint === "bevel"
+        ? `Box · ${JOINT_LABELS[joint]} · N=${p.n} · B=${p.bitAngle ?? 30}°`
+      : `Box · ${JOINT_LABELS[joint]} · N=${p.n} · S=${p.sideAngle ?? 10}°`;
     row.innerHTML = `<span class="pname">${escapeHtml(p.name)}<small>${detail}</small></span>`;
     const load = document.createElement("button");
     load.textContent = "Load";
     load.addEventListener("click", () => {
       state.mode = mode;
+      state.boxJoint = joint;
       state.n = Math.max(MIN_SIDES, p.n ?? 4);
       state.sideAngle = clamp(p.sideAngle ?? 10, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
       state.bitAngle = clamp(p.bitAngle ?? 30, 0, MAX_SIDE_ANGLE);

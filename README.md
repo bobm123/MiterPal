@@ -21,21 +21,25 @@ the saw to a 35° bevel and an 8° miter.*
 
 ## What it does
 
-Pick a joint type, set the inputs, and read the settings off the cards:
+Pick a project, set the inputs, and read the settings off the cards:
 
-- **Picture Frame** — flat N-sided frame: the miter angle.
-- **Mitered Box** — N-sided stave box with leaning sides: blade bevel and
-  table miter (dihedral D and miter complement M′ behind an advanced toggle).
-- **Butt Joint Box** — the same box with ends cut flush against the neighbor
-  instead of mitered: the adjusted blade tilt.
-- **Fixed Bevel Bit** — the cutter fixes the bevel, so MiterPal returns the
-  side lean that fits it.
+- **Picture Frame** — flat N-sided frame: the miter angle, plus per-stick
+  outside/inside/rabbet lengths.
+- **Box** — N-sided box with leaning sides. The saw-settings output has a
+  **Joint** selector: *Mitered* (blade bevel + table miter, with dihedral D
+  and miter complement M′ behind an advanced toggle), *Butt* (ends cut flush
+  against the neighbor: the adjusted blade tilt), or *Bevel bit* (the cutter
+  fixes the bevel, so MiterPal returns the side lean that fits it).
 - **Geodesic Sphere** — pick a base solid (tetrahedron, cube, octahedron,
-  icosahedron), 0–3 subdivisions, and a radius. Three construction outputs:
-  beveled **panels** (edge lengths + glue bevels), **hub-and-strut** (strut
-  lengths, end-cut angles, hub inventory), or **paper** — an SVG cut-and-fold
-  net of the whole model or one repeating module, with separate *cuts* and
-  *scores* layers for CNC paper cutters.
+  dodecahedron, icosahedron), subdivisions, and a radius. Construction
+  outputs: beveled **panels** (edge lengths + glue bevels), **hub-and-strut**
+  (strut lengths, end-cut angles, hub inventory), **paper** — an SVG
+  cut-and-fold net of the whole model or one repeating module, with separate
+  *cuts* and *scores* layers for CNC paper cutters — or **OpenSCAD**, a
+  parametric solid model.
+
+The Box and Picture Frame projects also offer **paper model** (fold-up SVG
+template) and **OpenSCAD** (parametric solid with wall thickness) outputs.
 
 Every mode has a live diagram, project save/recall, 0.5°-or-exact precision,
 dark mode, and a pre-cut checklist. Everything runs locally in the browser —
