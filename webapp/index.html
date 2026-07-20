@@ -555,11 +555,15 @@ function geoBaseMesh(name) {
   };
 }
 
+// Order-independent numeric key for an undirected edge (vertex counts stay
+// far below the 65536 stride: max is 642 verts at icosahedron subdiv 3).
+const edgeKey = (i, j) => i < j ? i * 65536 + j : j * 65536 + i;
+
 function geoSubdivide(mesh) {
   const verts = mesh.verts.map((v) => v.slice());
   const midCache = new Map();
   const mid = (i, j) => {
-    const key = i < j ? i * 65536 + j : j * 65536 + i;
+    const key = edgeKey(i, j);
     let idx = midCache.get(key);
     if (idx !== undefined) return idx;
     const a = verts[i], b = verts[j];
@@ -733,7 +737,7 @@ function computeGeodesic(base, subdiv) {
   faces.forEach((f, fi) => {
     for (let k = 0; k < 3; k++) {
       const i = f[k], j = f[(k + 1) % 3];
-      const key = i < j ? i * 65536 + j : j * 65536 + i;
+      const key = edgeKey(i, j);
       let e = edgeMap.get(key);
       if (!e) {
         e = { i: Math.min(i, j), j: Math.max(i, j), faces: [] };
@@ -770,7 +774,7 @@ function computeGeodesic(base, subdiv) {
   });
 
   // Panel types: group faces by their (sorted) edge-class composition.
-  const edgeOf = (i, j) => edgeMap.get(i < j ? i * 65536 + j : j * 65536 + i);
+  const edgeOf = (i, j) => edgeMap.get(edgeKey(i, j));
   const panelMap = new Map();
   for (const f of faces) {
     const combo = [0, 1, 2]
@@ -824,6 +828,28 @@ function geodesic(base, subdiv) {
    self-overlap (heavy curvature per patch, e.g. tetrahedron bases), the
    net automatically falls back to one piece per patch.                    */
 const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+// Shared 2-D geometry primitives for the net builders and tab generator.
+const cross2 = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+const segsCross = (a, b, c, d) =>
+  cross2(a, b, c) * cross2(a, b, d) < 0 && cross2(c, d, a) * cross2(c, d, b) < 0;
+const inTri2 = (p, t) => {
+  const s1 = cross2(t[0], t[1], p), s2 = cross2(t[1], t[2], p), s3 = cross2(t[2], t[0], p);
+  return (s1 > 0 && s2 > 0 && s3 > 0) || (s1 < 0 && s2 < 0 && s3 < 0);
+};
+
+// Vertices of a regular N-gon of circumradius Rc centred at the origin.
+// Even N rests on a flat bottom edge (N=4 is a square, not a diamond) —
+// the same orientation as the top-view diagram.
+function ngonRing(n, Rc) {
+  const rot = n % 2 === 0 ? Math.PI / n : 0;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
+    pts.push([Rc * Math.cos(a), Rc * Math.sin(a)]);
+  }
+  return pts;
+}
 
 // force === "module" unfolds just one base-face patch: the repeating unit
 // you cut N times (N = base face count) and join to build the whole sphere.
@@ -1058,13 +1084,7 @@ function computePaperNet(base, subdiv, force) {
     const pieceOf = new Array(F);
     const treePairs = new Set();
     const CELL = 0.6;
-    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-    const segX = (a, b, c, d) =>
-      cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
-    const inTri = (p, t) => {
-      const s1 = cross(t[0], t[1], p), s2 = cross(t[1], t[2], p), s3 = cross(t[2], t[0], p);
-      return (s1 > 0 && s2 > 0 && s3 > 0) || (s1 < 0 && s2 < 0 && s3 < 0);
-    };
+    const cross = cross2, segX = segsCross, inTri = inTri2;
     const shrunk = (p) => {
       const cx = (p[0][0] + p[1][0] + p[2][0]) / 3, cy = (p[0][1] + p[1][1] + p[2][1]) / 3;
       return p.map(([x, y]) => [cx + (x - cx) * 0.97, cy + (y - cy) * 0.97]);
@@ -1201,13 +1221,7 @@ function netOverlaps(polys) {
     t.y0 = Math.min(t[0][1], t[1][1], t[2][1]); t.y1 = Math.max(t[0][1], t[1][1], t[2][1]);
     return t;
   }).sort((a, b) => a.x0 - b.x0);
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const segX = (a, b, c, d) =>
-    cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
-  const inTri = (p, t) => {
-    const s1 = cross(t[0], t[1], p), s2 = cross(t[1], t[2], p), s3 = cross(t[2], t[0], p);
-    return (s1 > 0 && s2 > 0 && s3 > 0) || (s1 < 0 && s2 < 0 && s3 < 0);
-  };
+  const cross = cross2, segX = segsCross, inTri = inTri2;
   for (let i = 0; i < tris.length; i++) {
     const A = tris[i];
     for (let j = i + 1; j < tris.length && tris[j].x0 <= A.x1; j++) {
@@ -1375,9 +1389,7 @@ function flatDodecaNet() {
    in the layout, so each carries a tab; when two module copies meet, both
    bring one — trim one of the two if you prefer.                          */
 function applyTabs(net) {
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const segX = (a, b, c, d) =>
-    cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
+  const cross = cross2, segX = segsCross;
   const inPoly = (p, t) => {
     let pos = 0, neg = 0;
     for (let i = 0; i < t.length; i++) {
@@ -1525,65 +1537,13 @@ function applyTabs(net) {
 
 /* ---- Paper nets for the box / frame joint types --------------------------
    At paper thickness the bevels drop out (mitered and butt boxes become the
-   same shape): the box unfolds to its N-gon base with a trapezoid wall
-   hinged on every base edge. With base edge A, wall height H (measured
-   along the face) and side lean S, each wall's top edge is
+   same shape): the box unfolds to a band of N trapezoid walls plus a
+   separate base (boxBandNet below). With base edge A, wall height H
+   (measured along the face) and side lean S, each wall's top edge is
    B = A + 2·H·sin(S)·tan(180°/N) — a rectangle when upright, flared when
-   splayed, tapered when sloped in. Corner joints are lip pairs, so the
-   glue-tab generator applies; wall tops are free edges (noTab).
+   splayed, tapered when sloped in.
    The picture frame is flatter still: a mat template — the outer N-gon
    with the opening (apothem reduced by the frame width) cut out.          */
-function boxPaperNet(n, sideAngleDeg, A, H) {
-  const alpha = Math.PI / n;
-  const rot = n % 2 === 0 ? Math.PI / n : 0; // match the top-view diagram
-  const Rc = A / (2 * Math.sin(alpha));
-  const verts = [];
-  for (let i = 0; i < n; i++) {
-    const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
-    verts.push([Rc * Math.cos(a), Rc * Math.sin(a)]);
-  }
-  const e = H * Math.sin(sideAngleDeg * DEG) * Math.tan(alpha);
-  const leg = Math.hypot(H, e);
-  const polys = [verts.map((v) => v.slice())];
-  const folds = [], cuts = [], cutInfo = [];
-  const cornerLip = {};
-  for (let i = 0; i < n; i++) {
-    const P1 = verts[i], P2 = verts[(i + 1) % n];
-    const ux = (P2[0] - P1[0]) / A, uy = (P2[1] - P1[1]) / A;
-    let nx = -uy, ny = ux;
-    if (((P1[0] + P2[0]) / 2) * nx + ((P1[1] + P2[1]) / 2) * ny < 0) {
-      nx = -nx; ny = -ny; // outward from the base polygon
-    }
-    const Q1 = [P1[0] + nx * H - ux * e, P1[1] + ny * H - uy * e];
-    const Q2 = [P2[0] + nx * H + ux * e, P2[1] + ny * H + uy * e];
-    const face = polys.length;
-    polys.push([P1.slice(), P2.slice(), Q2, Q1]);
-    folds.push([P1[0], P1[1], P2[0], P2[1]]);
-    const top = [Q1[0], Q1[1], Q2[0], Q2[1]];
-    cuts.push(top);
-    cutInfo.push({ seg: top, face, partner: -1, noTab: true });
-    // The two legs at each base corner form the joint's lip pair.
-    for (const [P, Q, corner] of [[P1, Q1, i], [P2, Q2, (i + 1) % n]]) {
-      const seg = [P[0], P[1], Q[0], Q[1]];
-      cuts.push(seg);
-      const idx = cutInfo.length;
-      cutInfo.push({ seg, face, partner: -1 });
-      if (cornerLip[corner] !== undefined) {
-        cutInfo[idx].partner = cornerLip[corner];
-        cutInfo[cornerLip[corner]].partner = idx;
-      } else {
-        cornerLip[corner] = idx;
-      }
-    }
-  }
-  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const p of polys) for (const [px, py] of p) {
-    x0 = Math.min(x0, px); y0 = Math.min(y0, py);
-    x1 = Math.max(x1, px); y1 = Math.max(y1, py);
-  }
-  return { polys, folds, cuts, cutInfo, pieces: 1,
-           bbox: { x0, y0, x1, y1 }, dims: { A, B: A + 2 * e, leg, H } };
-}
 
 // Wrap-around box net: two pieces, each a single closed cut polygon.
 // Piece 1 — the N walls in one connected band (fold at each corner).
@@ -1714,14 +1674,9 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10, bottom = "b
     ? Math.max(A + 2 * dBot * Math.sin(sideAngleDeg * DEG) * Math.tan(alpha),
                0.2 * A)
     : A;
-  const rot = n % 2 === 0 ? Math.PI / n : 0;
   const Rc = bottomSide / (2 * Math.sin(alpha));
   const apothem = bottomSide / (2 * Math.tan(alpha));
-  const bverts = [];
-  for (let i = 0; i < n; i++) {
-    const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
-    bverts.push([Rc * Math.cos(a), Rc * Math.sin(a)]);
-  }
+  const bverts = ngonRing(n, Rc);
   const base = [], bfolds = [];
   for (let i = 0; i < n; i++) {
     const P = bverts[i], Q = bverts[(i + 1) % n];
@@ -1758,8 +1713,7 @@ function boxBandNet(n, sideAngleDeg, A, H, tabs = true, tabPct = 10, bottom = "b
       const q = pt(A2, B2, t);
       return (P[0] - q[0]) ** 2 + (P[1] - q[1]) ** 2;
     };
-    const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
-    if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) return 0;
+    if (segsCross(a, b, c, d)) return 0;
     return Math.min(d2p(a, c, d), d2p(b, c, d), d2p(c, a, b), d2p(d, a, b));
   };
   const inside = (P, poly) => { // ray cast
@@ -1829,16 +1783,8 @@ function framePaperNet(n, A, W, R = 0) {
   const apothem = A / (2 * Math.tan(alpha));
   const w = Math.min(W, 0.95 * apothem); // keep an opening
   const k = (apothem - w) / apothem;
-  const rot = n % 2 === 0 ? Math.PI / n : 0;
   const Rc = A / (2 * Math.sin(alpha));
-  const ring = (scale) => {
-    const pts = [];
-    for (let i = 0; i < n; i++) {
-      const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
-      pts.push([Rc * scale * Math.cos(a), Rc * scale * Math.sin(a)]);
-    }
-    return pts;
-  };
+  const ring = (scale) => ngonRing(n, Rc * scale);
   const outer = ring(1), inner = ring(k);
   // Outer edge and opening are separate closed polygons on the cuts layer.
   const cutPaths = [outer.map((p) => p.slice()), inner.map((p) => p.slice())];
@@ -1882,6 +1828,12 @@ function paperNet(base, subdiv, module, tabs) {
 // How many copies of the repeating module build the whole sphere.
 const GEO_MODULE_COUNT = { tetrahedron: 4, cube: 6, octahedron: 8,
                            dodecahedron: 12, icosahedron: 20 };
+
+// Display names, also used in generated OpenSCAD headers and net titles.
+const GEO_BASE_LABELS = {
+  tetrahedron: "Tetrahedron", cube: "Cube", octahedron: "Octahedron",
+  dodecahedron: "Dodecahedron", icosahedron: "Icosahedron",
+};
 
 // SVG cut file: red = cut, dashed blue = fold (score). Cuts and folds sit
 // on separate named layers (Inkscape layer convention, which most cutter
@@ -2006,8 +1958,10 @@ t     = W * thick_pct / 100;
 alpha = 180 / N;
 ap    = A / (2 * tan(alpha));       // outside apothem
 eps   = 0.01;
-in_side  = A * (ap - min(W, 0.95 * ap)) / ap;              // opening side
-rab_side = A * (ap - min(W, 0.95 * ap) + R_rab) / ap;      // rabbet (glass) side
+w_eff = min(W, 0.95 * ap);          // frame width, kept inside the face
+r_eff = min(R_rab, 0.95 * w_eff);   // rabbet, kept narrower than the width
+in_side  = A * (ap - w_eff) / ap;             // opening side
+rab_side = A * (ap - w_eff + r_eff) / ap;     // rabbet (glass) side
 
 module ngon(s) {
   r = s / (2 * sin(alpha));
@@ -2229,6 +2183,16 @@ const els = {
 const card = (num, cap) =>
   `<div class="result"><div class="num">${num}</div><div class="cap">${cap}</div></div>`;
 
+// Show only the named output-option rows; everything else hides. Every
+// render path calls this once, so no path can leave a stale row visible.
+function showOptionRows({ scope, tabs, tabPct, bottom, thick } = {}) {
+  els.geoScopeRow.hidden = !scope;
+  els.geoTabsRow.hidden = !tabs;
+  els.tabPctRow.hidden = !tabPct;
+  els.bottomRow.hidden = !bottom;
+  els.thickRow.hidden = !thick;
+}
+
 function render() {
   applyTheme();
   const geo = state.mode === "geodesicSphere";
@@ -2270,7 +2234,7 @@ function render() {
     ? "Bevel cutter angle from vertical"
     : "0 = upright · + splays out · − slopes in";
 
-  if (boxPaper) { renderBoxPaper(frame, r); return; }
+  if (boxPaper) { renderBoxPaper(frame); return; }
   if (boxScadOut) { renderBoxScad(frame, r); return; }
 
   // Picture frame, saw mode: report the per-stick material lengths alongside
@@ -2294,11 +2258,7 @@ function render() {
       (fd.clamped ? " <b>Width reduced to keep an opening.</b>" : "") +
       (fd.rabbetClamped ? " <b>Rabbet reduced to stay under the frame width.</b>" : "");
     els.geoSvgBtn.hidden = true;
-    els.geoScopeRow.hidden = true;
-    els.geoTabsRow.hidden = true;
-    els.tabPctRow.hidden = true;
-    els.bottomRow.hidden = true;
-    els.thickRow.hidden = true;
+    showOptionRows({});
   }
 
   if (bit && !r.feasible) {
@@ -2356,7 +2316,7 @@ function updateDimInputs(frame, paper) {
   }
 }
 
-function renderBoxPaper(frame, r) {
+function renderBoxPaper(frame) {
   const n = state.n;
   updateDimInputs(frame, true);
 
@@ -2370,13 +2330,11 @@ function renderBoxPaper(frame, r) {
     : card(2, "Pieces") + card(n, "Walls");
   els.leanBanner.hidden = true;
   els.advanced.hidden = true;
-  els.geoScopeRow.hidden = true;
-  els.geoTabsRow.hidden = frame; // frame has no tabs
+  showOptionRows({ tabs: !frame, // frame has no tabs
+                   tabPct: !frame && state.boxTabs,
+                   bottom: !frame && state.boxTabs }); // rim lock needs both tab sets
   els.geoTabsChk.checked = state.boxTabs;
-  els.tabPctRow.hidden = frame || !state.boxTabs;
   if (document.activeElement !== els.tabPct) els.tabPct.value = state.tabPct;
-  els.bottomRow.hidden = frame || !state.boxTabs; // rim lock needs both tab sets
-  els.thickRow.hidden = true;
   document.querySelectorAll("#bottomSeg button").forEach((b) =>
     b.classList.toggle("on", b.dataset.v === state.boxBottom));
   els.geoSvgBtn.hidden = false;
@@ -2456,11 +2414,7 @@ function renderBoxScad(frame, r) {
     card(n, frame ? "Sticks" : "Staves");
   els.leanBanner.hidden = true;
   els.advanced.hidden = true;
-  els.geoScopeRow.hidden = true;
-  els.geoTabsRow.hidden = true;
-  els.tabPctRow.hidden = true;
-  els.bottomRow.hidden = true;
-  els.thickRow.hidden = false;
+  showOptionRows({ thick: true });
   els.thickRef.textContent = frame ? "% of W" : "% of A";
   if (document.activeElement !== els.thickPct) els.thickPct.value = state.thickPct;
   els.geoSvgBtn.hidden = false;
@@ -2503,10 +2457,6 @@ function renderBoxScad(frame, r) {
 }
 
 /* ---- Geodesic rendering --------------------------------------------------- */
-const GEO_BASE_LABELS = {
-  tetrahedron: "Tetrahedron", cube: "Cube", octahedron: "Octahedron",
-  dodecahedron: "Dodecahedron", icosahedron: "Icosahedron",
-};
 
 function renderGeodesic() {
   const strut = state.geoCon === "strut";
@@ -2549,12 +2499,9 @@ function renderGeodesic() {
   els.leanBanner.hidden = true;
   els.advanced.hidden = true;
   els.geoSvgBtn.hidden = !(paper || scad);
-  els.geoScopeRow.hidden = !paper;
-  els.geoTabsRow.hidden = !paper;
+  showOptionRows({ scope: paper, tabs: paper, // tabs stay collision-sized
+                   thick: scad });
   els.geoTabsChk.checked = state.geoTabs;
-  els.tabPctRow.hidden = true; // geodesic tabs stay collision-sized
-  els.bottomRow.hidden = true;
-  els.thickRow.hidden = !scad;
   if (scad) {
     els.thickRef.textContent = "% of R";
     if (document.activeElement !== els.thickPct) els.thickPct.value = state.thickPct;
@@ -2713,13 +2660,7 @@ function drawTopView() {
   const [ctx, w, h] = setupCanvas(els.topView);
   const n = state.n;
   const cx = w / 2, cy = h / 2, radius = Math.min(w, h) / 2 * 0.82;
-  // Even N rests on a flat edge (N=4 is a square, not a diamond).
-  const rot = n % 2 === 0 ? Math.PI / n : 0;
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const a = -Math.PI / 2 + rot + 2 * Math.PI * i / n;
-    pts.push([cx + radius * Math.cos(a), cy + radius * Math.sin(a)]);
-  }
+  const pts = ngonRing(n, radius).map(([x, y]) => [cx + x, cy + y]);
   ctx.beginPath();
   pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
   ctx.closePath();
@@ -2929,7 +2870,7 @@ els.geoSvgBtn.addEventListener("click", () => {
 // the sphere radius in Geodesic Sphere mode.
 function setAngle(v) {
   if (state.mode === "geodesicSphere") {
-    state.geoRadius = clamp(v, 0, 1e6);
+    state.geoRadius = clamp(v, 0.001, 1e6); // R=0 would export a blank SVG
   } else if (state.mode === "fixedBevelBit") {
     state.bitAngle = clamp(v, 0, MAX_SIDE_ANGLE); // a cutter can't be negative
   } else {
@@ -3009,12 +2950,12 @@ function renderProjects() {
     load.textContent = "Load";
     load.addEventListener("click", () => {
       state.mode = mode;
-      state.n = Math.max(MIN_SIDES, p.n);
-      state.sideAngle = clamp(p.sideAngle, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
+      state.n = Math.max(MIN_SIDES, p.n ?? 4);
+      state.sideAngle = clamp(p.sideAngle ?? 10, -MAX_SIDE_ANGLE, MAX_SIDE_ANGLE);
       state.bitAngle = clamp(p.bitAngle ?? 30, 0, MAX_SIDE_ANGLE);
       state.geoBase = GEO_BASE_LABELS[p.geoBase] ? p.geoBase : "icosahedron";
       state.geoSubdiv = clamp(p.geoSubdiv ?? 1, 0, geoMaxSubdiv(state.geoBase));
-      state.geoRadius = clamp(p.geoRadius ?? 10, 0, 1e6);
+      state.geoRadius = clamp(p.geoRadius ?? 10, 0.001, 1e6);
       state.geoCon = ["strut", "paper", "scad"].includes(p.geoCon) ? p.geoCon : "panel";
       state.geoScope = p.geoScope === "module" ? "module" : "model";
       state.geoTabs = p.geoTabs !== false;
@@ -3090,7 +3031,7 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 // Expose the math for testing (node --experimental-default-type=module not
 // needed; tests read this file and eval the script block).
 if (typeof module !== "undefined") {
-  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs, boxPaperNet, boxBandNet, framePaperNet, boxScad, frameScad, geoScad };
+  module.exports = { computeCompoundMiter, computeButtJoint, computePictureFrame, computeFixedBevelBit, computeForMode, formatAngle, computeGeodesic, geoBaseMesh, geoSubdivide, computePaperNet, netOverlaps, paperSVG, applyTabs, boxBandNet, framePaperNet, boxScad, frameScad, geoScad };
 }
 </script>
 </body>

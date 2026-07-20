@@ -35,8 +35,12 @@ self.addEventListener("fetch", (e) => {
     caches.match(e.request, { ignoreSearch: true }).then((hit) =>
       hit ||
       fetch(e.request).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_VERSION).then((c) => c.put(e.request, copy));
+        // Only cache good responses — a transient 404/5xx must not be
+        // stored, or cache-first would serve it forever.
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_VERSION).then((c) => c.put(e.request, copy));
+        }
         return res;
       }).catch(() => caches.match("./index.html"))
     )
