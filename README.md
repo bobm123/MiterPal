@@ -68,15 +68,25 @@ reference implementation in [`scripts/compound_miter.py`](scripts/compound_miter
 
 ## From file to object
 
-The paper (SVG), OpenSCAD, and cut-list exports go straight from the browser
-to a craft plotter, 3D printer, or slicer — here a box net cut, scored, and
-folded up, and a dodecahedron rendered from the generated OpenSCAD:
+Two exports, each shown from the generated file to the finished object.
+
+The paper (SVG) net goes straight to a craft plotter &mdash; cut the solid
+lines, score the dashed ones, then fold up and glue:
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src="images/svg-box5.png" width="260" alt="SVG cut-and-fold net for a 5-sided box at a 10 degree slope"><br><sub><b>SVG net</b> — 5-sided box, 10° slope (red cuts, blue scores, glue tabs)</sub></td>
-    <td align="center" width="33%"><img src="images/box5-folded.png" width="260" alt="The same net cut out and folded into a paper box"><br><sub><b>…folded up</b> — cut, scored, and glued into the finished box</sub></td>
-    <td align="center" width="33%"><img src="images/scad-dodeca.png" width="260" alt="OpenSCAD render of a dodecahedron with one subdivision plus a flattened panel"><br><sub><b>OpenSCAD output</b> — dodecahedron, 1 subdivision</sub></td>
+    <td align="center" width="50%"><img src="images/svg-box5.png" width="300" alt="SVG cut-and-fold net for a 5-sided box at a 10 degree slope"><br><sub><b>SVG net</b> &mdash; 5-sided box, 10&deg; slope (red cuts, blue scores, glue tabs)</sub></td>
+    <td align="center" width="50%"><img src="images/box5-folded.png" width="300" alt="The same net cut out and folded into a paper box"><br><sub><b>&hellip;folded up</b> &mdash; cut, scored, and glued into the finished box</sub></td>
+  </tr>
+</table>
+
+The OpenSCAD output is a parametric solid &mdash; render it, then slice it for
+3D printing:
+
+<table>
+  <tr>
+    <td align="center" width="50%"><img src="images/scad-tetra.png" width="300" alt="OpenSCAD render of a tetrahedron with one subdivision plus flattened panel templates"><br><sub><b>OpenSCAD output</b> &mdash; tetrahedron, 1 subdivision</sub></td>
+    <td align="center" width="50%"><img src="images/TetrahedronWithOneDivision-slicer.png" width="300" alt="The tetrahedron model loaded on a 3D printer bed in the slicer"><br><sub><b>&hellip;on the print bed</b> &mdash; sliced and ready to print</sub></td>
   </tr>
 </table>
 
