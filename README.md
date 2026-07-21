@@ -6,15 +6,13 @@ It all started when I purchased a miter saw. I soon realized just how complicate
   <img src="images/515mAsGIQ0L_AC_SL1000.png" width="300" alt="A compound miter saw">
 </p>
 
-The app grew from there. What if the box has butt joints instead of actual miters? What I wanted to make a 7-sided picture frame for my [Snallygaster](https://en.wikipedia.org/wiki/Snallygaster)? What about geodesic domes? Why not print some paper models or templates. Could it generate 3D models too?
+The applicaiton grew from there. What if the box has butt joints instead of actual miters? What if I wanted to make a 7-sided picture frame for my [Snallygaster](https://en.wikipedia.org/wiki/Snallygaster)? What about geodesic domes? Why not print some paper models or templates. Could it generate 3D models too?
 
-The app calculates blade tilt and angle setting for the miter saw (the original use case) along with SVG files for making templates and can generate 3D models in the form of OpenSCAD code
+The app calculates blade tilt and angle settings for the miter saw (the original use case) along with dimensions. I can also generate SVG files for making templates or paper crafts and OpenSCAD code for 3D models.
 
 **→ Use it now: <https://bobm123.github.io/MiterPal/webapp/>**
 
-Works in any phone, tablet, or desktop browser. To make it a home-screen app
-(recommended — full screen, works offline in the shop, and saved projects
-persist reliably):
+It should work on any phone, tablet, or desktop browser. Use it a the desktop then print project notes or take it with you into the shop as a mobile app. To make it a home-screen app:
 
 - **iOS Safari:** Share → **Add to Home Screen**
 - **Android Chrome:** menu → **Add to Home screen** (or accept the install prompt)
@@ -54,11 +52,11 @@ no accounts, no network needed after the first load.
 
 ## Implementation details
 
-The motivation behind all this was really finding a non-trivial example to serve as an "exercise for the student (me)" in using the the current generation of AI tools.
+The motivation behind all this was to find a non-trivial example (who needs another to-do list app?) to serve as an "exercise for the student" (me) in using the the current generation of AI tools.
   
-That started with some research into the math behind these calcualtions (derivations, sanity checks, worked examples), see [`docs/compound-miter-angles.md`](docs/compound-miter-angles.md), with a reference implementation in [`scripts/compound_miter.py`](scripts/compound_miter.py).
+That started with some research into the math behind these calculations (derivations, sanity checks, worked examples), see [`docs/compound-miter-angles.md`](docs/compound-miter-angles.md), with a reference implementation in [`scripts/compound_miter.py`](scripts/compound_miter.py).
 
-The code itself was originally in Dart using Flutter libraries as it seemed like a good subject for a mobile app and the AI recommended this approach. As complicated as the math is for humans, it really doesn't require much of a mobile device. It's simply a user interface with some calculations and file outputs. There's no wireless (beyond initial load) nor use of camera, gyro, or other devices smart phones typically have. A Progressive Web App (PWA) that really only needs an off-line mode is a better fit. The benefit is a much simpler deployment story; a link from GitHub vs. dealing with the App store. So it was ported to Javascript early on and development continued from that.
+The code itself was originally in Dart using Flutter libraries as it seemed like a good subject for a mobile app and the AI recommended this approach. As complicated as the math is for humans, it doesn't require much of a mobile device. It's simply a user interface with some calculations and file outputs. There's no wireless (beyond initial load) nor use of camera, gyro, or other devices smart phones typically have. A Progressive Web App (PWA) that doesn't progress beyond its off-line mode is a better fit. The benefit is a much simpler deployment story; a link from GitHub vs. dealing with the App store. So the project was ported to Javascript early on and development continued from that.
 
 ## Screens
 
