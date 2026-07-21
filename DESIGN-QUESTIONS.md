@@ -72,18 +72,23 @@ we'll refine these live.
    paper scale is essentially a mat template, which may be independently
    useful.
 
-4. **Picture Frame dimensions.** Add length, height, and material (stock)
-   width inputs, with a toggle for whether the given dimensions are the
-   *inside* (rabbet/opening) or *outside* of the frame. For N=4 this turns
-   the square into proper rectangles; for other N, treat the two dimensions
-   as major/minor axes of the polygon and scale side lengths accordingly.
+4. **Rectangular / non-regular frames and boxes (dimensions).** *(Confirmed
+   near-term — 2026-07.)* Add outside **width × height** inputs (A and B)
+   plus material (stock) width, with a toggle for whether the given
+   dimensions are the *inside* (rabbet/opening) or *outside* of the frame.
+   For N=4 this turns the square into proper **rectangles**; for other N,
+   treat the two dimensions as major/minor axes of the polygon and scale
+   side lengths accordingly. The results should **show the A- and B-side
+   lengths** (they come in opposite pairs), not one length for a regular
+   polygon.
    Notes for implementation: a rectangle keeps 45° corners, but a stretched
    (non-regular) polygon no longer has equal corner angles — each corner's
    miter is half its own interior angle, and opposite sides come in pairs,
    so the cut list becomes per-side lengths *plus* per-corner miters.
    Output should give long-point/short-point lengths derived from the
-   stock width and the inside/outside reference. Same width/height inputs
-   feed backlog items 2 (3D parts) and 3 (box paper mode).
+   stock width and the inside/outside reference. The same width/height
+   inputs feed the OpenSCAD (item 2) and box paper (item 3) outputs, which
+   are already shipped for regular shapes and would extend to these.
 
 5. **Dodecahedron base solid for Geodesic Sphere mode.** ✅ *Shipped
    (2026-07), as designed: kis pre-triangulation like the cube (pentakis
@@ -93,6 +98,27 @@ we'll refine these live.
    unfolding the actual solid, pentagon paper module (cut 12), OpenSCAD
    output included. Max subdivision capped at 2 (240 triangles; the cut
    list stays readable).*
+
+6. **Geodesic hub-and-strut fabrication.** *(Confirmed — 2026-07.)* The
+   strut cut list (lengths, end-cut angles, hub classes) is implemented;
+   the struts view still needs work to make the *hubs* buildable:
+   - **Hub size as a percentage of strut length.** One input that sets the
+     hub radius (centre to socket mouth), the same pattern as the wall/panel
+     thickness percentage already used in the OpenSCAD outputs.
+   - **Automatic strut shortening.** Subtract the hub allowance from each
+     strut so the reported cut lengths already account for the hub sitting
+     at each end (the "hub-diameter allowance" noted under *Geodesic sphere
+     mode — future work* above).
+   - **3D-printable hub shapes (OpenSCAD output).** Emit a solid per hub
+     class: a central body with one socket per incident strut, each bore
+     aimed along that strut's direction — this needs the azimuth angles
+     between adjacent struts around the hub plus the elevation from the
+     hub's radial axis (the azimuth work also noted above). Sockets should
+     be **optional** and sized for a dowel/rod of a given diameter and
+     depth, so the struts become plain dowels cut to the adjusted lengths
+     and glued into the printed hubs. Show the per-hub-class quantity, and
+     expose hub radius, socket diameter, and socket depth as variables at
+     the top of the `.scad`, matching the existing panel/box SCAD files.
 
 ## Non-functional
 - App name/branding, icon, color scheme?
