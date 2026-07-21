@@ -14,10 +14,12 @@ persist reliably):
 - **iOS Safari:** Share → **Add to Home Screen**
 - **Android Chrome:** menu → **Add to Home screen** (or accept the install prompt)
 
-<img src="Clipboard01.png" width="320" alt="MiterPal: a 5-sided mitered box with sides leaning 11 degrees gives a 35 degree bevel and 8 degree miter">
+<p align="center">
+  <img src="images/MiteredBox.png" width="300" alt="MiterPal showing a 5-sided box with sides leaning 10 degrees: a 35.5 degree bevel and a 7 degree miter">
+</p>
 
-*A typical calculation: a 5-sided mitered box with sides leaning 11° — set
-the saw to a 35° bevel and an 8° miter.*
+*A typical calculation: a 5-sided box with sides leaning 10° — set the saw to
+a 35.5° bevel and a 7° miter.*
 
 ## What it does
 
@@ -49,6 +51,31 @@ The math behind it (derivations, sanity checks, worked examples) is in
 [`docs/compound-miter-angles.md`](docs/compound-miter-angles.md), with a
 reference implementation in [`scripts/compound_miter.py`](scripts/compound_miter.py).
 
+## Screens
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="images/box-bevel.png" width="240" alt="Box mode with the Bevel-bit joint selected"><br><sub><b>Box</b> — Joint selector (bevel-bit shown)</sub></td>
+    <td align="center" width="33%"><img src="images/frame-saw.png" width="240" alt="Picture Frame mode showing miter angle and per-stick lengths"><br><sub><b>Picture Frame</b> — miter + cut lengths</sub></td>
+    <td align="center" width="33%"><img src="images/geo-panels.png" width="240" alt="Geodesic Sphere mode showing the panel cut list"><br><sub><b>Geodesic Sphere</b> — panel cut list</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="images/box-paper.png" width="240" alt="Box mode fold-up paper template"><br><sub><b>Box</b> — fold-up paper model</sub></td>
+    <td align="center"><img src="images/box-scad.png" width="240" alt="Box mode parametric OpenSCAD output"><br><sub><b>Box</b> — parametric OpenSCAD</sub></td>
+    <td align="center"><img src="images/geo-paper.png" width="240" alt="Geodesic Sphere cut-and-fold paper net"><br><sub><b>Geodesic Sphere</b> — cut-and-fold net</sub></td>
+  </tr>
+</table>
+
+<!--
+  Real-world outputs — drop photos into images/ and uncomment a row like this:
+  <table>
+    <tr>
+      <td align="center"><img src="images/scad-print.png" width="300"><br><sub>OpenSCAD model, 3D-printed</sub></td>
+      <td align="center"><img src="images/paper-model.png" width="300"><br><sub>Paper net cut on a craft plotter and folded up</sub></td>
+    </tr>
+  </table>
+-->
+
 ## Deploy your own copy
 
 The app is static files — the `webapp/` folder is the whole thing, no build
@@ -69,6 +96,7 @@ Implementation details are in [`webapp/README.md`](webapp/README.md).
 
 ```
 webapp/               the app — single-file index.html + PWA wrapper (webapp/README.md)
+images/               README screenshots
 docs/                 math derivation + diagrams, Windows setup, framework trade study
 scripts/              canonical Python reference for the miter formulas
 lib/ test/ windows/   Flutter port, planned future native app (lib/README.md)
