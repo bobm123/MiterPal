@@ -1,9 +1,14 @@
 # MiterPal
 
-A web app that computes compound angles for the various joint geometries seen in mitered frames, 
-boxes with sloped sides and geodesic domes. The app generates blade tilt and angle setting for a 
-miter saw (the original use case) along with SVG files for making templates and 3D models in 
-the form of OpenSCAD code
+It all started when I purchased a miter saw. I soon realized just how complicated the math was for computing the blade angles I'd need in the workshop. This involves pretty much all of Trigonometry (see references below). So I had my AI friend (Claude) "vibe code" a workshop companion for computing these angles. 
+
+<p align="center">
+  <img src="images/515mAsGIQ0L_AC_SL1000.png" width="300" alt="A compound miter saw">
+</p>
+
+The app grew from there. What if the box has butt joints instead of actual miters? What I wanted to make a 7-sided picture frame for my [Snallygaster](https://en.wikipedia.org/wiki/Snallygaster)? What about geodesic domes? Why not print some paper models or templates. Could it generate 3D models too?
+
+The app calculates blade tilt and angle setting for the miter saw (the original use case) along with SVG files for making templates and can generate 3D models in the form of OpenSCAD code
 
 **→ Use it now: <https://bobm123.github.io/MiterPal/webapp/>**
 
@@ -47,9 +52,13 @@ Every mode has a live diagram, project save/recall, 0.5°-or-exact precision,
 dark mode, and a pre-cut checklist. Everything runs locally in the browser —
 no accounts, no network needed after the first load.
 
-The math behind it (derivations, sanity checks, worked examples) is in
-[`docs/compound-miter-angles.md`](docs/compound-miter-angles.md), with a
-reference implementation in [`scripts/compound_miter.py`](scripts/compound_miter.py).
+## Implementation details
+
+The motivation behind all this was really finding a non-trivial example to serve as an "exercise for the student (me)" in using the the current generation of AI tools.
+  
+That started with some research into the math behind these calcualtions (derivations, sanity checks, worked examples), see [`docs/compound-miter-angles.md`](docs/compound-miter-angles.md), with a reference implementation in [`scripts/compound_miter.py`](scripts/compound_miter.py).
+
+The code itself was originally in Dart using Flutter libraries as it seemed like a good subject for a mobile app and the AI recommended this approach. As complicated as the math is for humans, it really doesn't require much of a mobile device. It's simply a user interface with some calculations and file outputs. There's no wireless (beyond initial load) nor use of camera, gyro, or other devices smart phones typically have. A Progressive Web App (PWA) that really only needs an off-line mode is a better fit. The benefit is a much simpler deployment story; a link from GitHub vs. dealing with the App store. So it was ported to Javascript early on and development continued from that.
 
 ## Screens
 
@@ -75,8 +84,8 @@ lines, score the dashed ones, then fold up and glue:
 
 <table>
   <tr>
-    <td align="center" width="50%"><img src="images/svg-box5.png" width="300" alt="SVG cut-and-fold net for a 5-sided box at a 10 degree slope"><br><sub><b>SVG net</b> &mdash; 5-sided box, 10&deg; slope (red cuts, blue scores, glue tabs)</sub></td>
-    <td align="center" width="50%"><img src="images/box5-folded.png" width="300" alt="The same net cut out and folded into a paper box"><br><sub><b>&hellip;folded up</b> &mdash; cut, scored, and glued into the finished box</sub></td>
+    <td align="center" width="50%"><img src="images/svg-box5.png" width="300" alt="SVG cut-and-fold net for a 5-sided box at a 10 degree slope"><br><sub><b>SVG net</b> — 5-sided box, 10° slope (red cuts, blue scores, glue tabs)</sub></td>
+    <td align="center" width="50%"><img src="images/box5-folded.png" width="300" alt="The same net cut out and folded into a paper box"><br><sub><b>…folded up</b> — cut, scored, and glued into the finished box</sub></td>
   </tr>
 </table>
 
@@ -85,8 +94,8 @@ The OpenSCAD output is a parametric solid &mdash; render it, then slice it for
 
 <table>
   <tr>
-    <td align="center" width="50%"><img src="images/scad-tetra.png" width="300" alt="OpenSCAD render of a tetrahedron with one subdivision plus flattened panel templates"><br><sub><b>OpenSCAD output</b> &mdash; tetrahedron, 1 subdivision</sub></td>
-    <td align="center" width="50%"><img src="images/TetrahedronWithOneDivision-slicer.png" width="300" alt="The tetrahedron model loaded on a 3D printer bed in the slicer"><br><sub><b>&hellip;on the print bed</b> &mdash; sliced and ready to print</sub></td>
+    <td align="center" width="50%"><img src="images/scad-tetra.png" width="300" alt="OpenSCAD render of a tetrahedron with one subdivision plus flattened panel templates"><br><sub><b>OpenSCAD output</b> — tetrahedron, 1 subdivision</sub></td>
+    <td align="center" width="50%"><img src="images/TetrahedronWithOneDivision-slicer.png" width="300" alt="The tetrahedron model loaded on a 3D printer bed in the slicer"><br><sub><b>…on the print bed</b> — sliced and ready to print</sub></td>
   </tr>
 </table>
 
