@@ -1,9 +1,9 @@
 # MiterPal
 
-A web app that turns joint geometry into saw settings: compound miters for
-N-sided boxes and picture frames, stave angles for fixed-bevel router bits,
-and complete cut lists for geodesic spheres — including printable
-cut-and-fold paper nets.
+A web app that computes compound angles for the various joint geometries seen in mitered frames, 
+boxes with sloped sides and geodesic domes. The app generates blade tilt and angle setting for a 
+miter saw (the original use case) along with SVG files for making templates and 3D models in 
+the form of OpenSCAD code
 
 **→ Use it now: <https://bobm123.github.io/MiterPal/webapp/>**
 
