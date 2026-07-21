@@ -56,12 +56,12 @@ reference implementation in [`scripts/compound_miter.py`](scripts/compound_miter
 <table>
   <tr>
     <td align="center" width="33%"><img src="images/box-bevel.png" width="240" alt="Box mode with the Bevel-bit joint selected"><br><sub><b>Box</b> — Joint selector (bevel-bit shown)</sub></td>
-    <td align="center" width="33%"><img src="images/frame-saw.png" width="240" alt="Picture Frame mode showing miter angle and per-stick lengths"><br><sub><b>Picture Frame</b> — miter + cut lengths</sub></td>
-    <td align="center" width="33%"><img src="images/geo-panels.png" width="240" alt="Geodesic Sphere mode showing the panel cut list"><br><sub><b>Geodesic Sphere</b> — panel cut list</sub></td>
+    <td align="center" width="33%"><img src="images/box-paper.png" width="240" alt="Box mode fold-up paper template"><br><sub><b>Box</b> — fold-up paper model</sub></td>
+    <td align="center" width="33%"><img src="images/box-scad.png" width="240" alt="Box mode parametric OpenSCAD output"><br><sub><b>Box</b> — parametric OpenSCAD</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="images/box-paper.png" width="240" alt="Box mode fold-up paper template"><br><sub><b>Box</b> — fold-up paper model</sub></td>
-    <td align="center"><img src="images/box-scad.png" width="240" alt="Box mode parametric OpenSCAD output"><br><sub><b>Box</b> — parametric OpenSCAD</sub></td>
+    <td align="center"><img src="images/frame-saw.png" width="240" alt="Picture Frame mode showing miter angle and per-stick lengths"><br><sub><b>Picture Frame</b> — miter + cut lengths</sub></td>
+    <td align="center"><img src="images/geo-panels.png" width="240" alt="Geodesic Sphere mode showing the panel cut list"><br><sub><b>Geodesic Sphere</b> — panel cut list</sub></td>
     <td align="center"><img src="images/geo-paper.png" width="240" alt="Geodesic Sphere cut-and-fold paper net"><br><sub><b>Geodesic Sphere</b> — cut-and-fold net</sub></td>
   </tr>
 </table>
