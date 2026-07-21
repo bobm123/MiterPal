@@ -66,15 +66,19 @@ reference implementation in [`scripts/compound_miter.py`](scripts/compound_miter
   </tr>
 </table>
 
-<!--
-  Real-world outputs — drop photos into images/ and uncomment a row like this:
-  <table>
-    <tr>
-      <td align="center"><img src="images/scad-print.png" width="300"><br><sub>OpenSCAD model, 3D-printed</sub></td>
-      <td align="center"><img src="images/paper-model.png" width="300"><br><sub>Paper net cut on a craft plotter and folded up</sub></td>
-    </tr>
-  </table>
--->
+## From file to object
+
+The paper (SVG), OpenSCAD, and cut-list exports go straight from the browser
+to a craft plotter, 3D printer, or slicer — here a box net cut, scored, and
+folded up, and a dodecahedron rendered from the generated OpenSCAD:
+
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="images/svg-box5.png" width="260" alt="SVG cut-and-fold net for a 5-sided box at a 10 degree slope"><br><sub><b>SVG net</b> — 5-sided box, 10° slope (red cuts, blue scores, glue tabs)</sub></td>
+    <td align="center" width="33%"><img src="images/box5-folded.png" width="260" alt="The same net cut out and folded into a paper box"><br><sub><b>…folded up</b> — cut, scored, and glued into the finished box</sub></td>
+    <td align="center" width="33%"><img src="images/scad-dodeca.png" width="260" alt="OpenSCAD render of a dodecahedron with one subdivision plus a flattened panel"><br><sub><b>OpenSCAD output</b> — dodecahedron, 1 subdivision</sub></td>
+  </tr>
+</table>
 
 ## Deploy your own copy
 
